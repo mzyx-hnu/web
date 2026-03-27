@@ -34,9 +34,8 @@
             box-shadow: 0 0 0 4px rgb(16 185 129) inset;
             animation: movePulse 1.8s infinite;
         }
-        /* 移动范围内颜色较深的一圈攻击范围高亮（更醒目的深红） */
         .highlight-attack {
-            background: rgba(239, 68, 68, 0.65) !important; /* 更深、更明显 */
+            background: rgba(239, 68, 68, 0.68) !important;
             box-shadow: 0 0 0 6px rgb(239 68 68) inset;
             animation: attackPulse 1.1s infinite;
         }
@@ -93,7 +92,7 @@
                     <span id="turn-team" class="turn-indicator">🟦 玩家回合</span>
                     <span id="turn-number" class="font-mono text-xl text-white">01</span>
                 </div>
-                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">点击任意单位查看属性 → 友方可移动/攻击</div>
+                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动（总距离≤移动范围）+ 攻击1次（攻击后仍可移动）</div>
             </div>
 
             <button onclick="endPlayerTurn()" 
@@ -108,14 +107,15 @@
             
             <!-- 左侧：游戏规则 + 全场单位列表 -->
             <div class="w-72 glass-panel rounded-3xl p-5 flex flex-col text-xs space-y-4">
-                <div class="font-bold text-emerald-400 uppercase tracking-widest text-center mb-2">游戏规则（简化版）</div>
+                <div class="font-bold text-emerald-400 uppercase tracking-widest text-center mb-2">游戏规则（新版）</div>
                 <div class="text-slate-300 leading-relaxed space-y-3 text-[13px]">
-                    <p>1. <span class="text-emerald-400">点击任意单位</span>（友方或敌方）可查看属性与范围</p>
-                    <p>2. 友方未行动时：点击绿色格子移动</p>
-                    <p>3. 移动后点击深红色格子攻击</p>
-                    <p>4. 移动范围内会显示一圈<span class="text-rose-400">深红色攻击范围</span></p>
-                    <p>5. 点击已选中单位可取消选中</p>
-                    <p class="text-amber-300">• 伤害公式：ATK - DEF（最低1）</p>
+                    <p>1. 点击任意单位查看属性与范围</p>
+                    <p>2. <b>友方</b>：一回合可多次移动（总距离 ≤ 移动范围）</p>
+                    <p>3. 可攻击1次（攻击后仍可继续移动）</p>
+                    <p>4. 移动范围实时计算剩余步数（BFS绕过单位）</p>
+                    <p>5. 移动范围内显示<span class="text-rose-400">深红色攻击圈</span></p>
+                    <p>6. 点击自身取消选中 / 点击敌方可攻击（若可攻击）</p>
+                    <p class="text-amber-300">• 伤害：ATK - DEF（最低1）</p>
                 </div>
                 
                 <!-- 全场单位血量一览 -->
@@ -177,8 +177,8 @@
                         </div>
                         
                         <div class="flex justify-between items-center text-sm">
-                            <span class="font-bold text-emerald-300">🚶 移动范围</span>
-                            <span id="selected-move" class="font-mono text-xl font-bold"></span>
+                            <span class="font-bold text-emerald-300">🚶 剩余移动</span>
+                            <span id="selected-remaining-move" class="font-mono text-xl font-bold"></span>
                         </div>
                         
                         <div class="flex justify-between items-center text-sm">
@@ -198,7 +198,7 @@
                 
                 <div class="text-[10px] text-slate-400 mt-4 pt-4 border-t border-white/10">
                     当前回合：<span id="log-turn" class="font-mono">1</span><br>
-                    敌方AI会优先靠近最近友方并攻击
+                    敌方AI单次行动
                 </div>
             </div>
         </div>
@@ -268,8 +268,7 @@
             enemyUnits: [],
             currentTurn: "player",
             turnCount: 1,
-            selected: null,          // {team: "friendly"|"enemy", id: "..."} 或 null
-            phase: "select"
+            selected: null          // {team: "friendly"|"enemy", id: "..."} 或 null
         };
 
         // ==================== 日志系统 ====================
@@ -286,6 +285,44 @@
         // ==================== 获取单位 ====================
         function getUnit(team, id) {
             return STATE[team + "Units"].find(u => u.id === id);
+        }
+
+        // ==================== BFS 计算可达范围（考虑单位阻挡，4方向） ====================
+        function calculateReachable(startRow, startCol, maxMove) {
+            const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+            const distMap = {};                    // key: "r,c" → 最小步数
+            const queue = [{ r: startRow, c: startCol, dist: 0 }];
+            const visited = new Set();
+            visited.add(`${startRow},${startCol}`);
+            distMap[`${startRow},${startCol}`] = 0;
+
+            while (queue.length > 0) {
+                const { r, c, dist } = queue.shift();
+                if (dist >= maxMove) continue;
+
+                for (let [dr, dc] of directions) {
+                    const nr = r + dr;
+                    const nc = c + dc;
+                    if (nr < 0 || nr > 9 || nc < 0 || nc > 9) continue;
+
+                    const key = `${nr},${nc}`;
+                    if (visited.has(key)) continue;
+
+                    // 检查是否被任何存活单位占据
+                    let blocked = false;
+                    [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
+                        if (u.hp > 0 && u.row === nr && u.col === nc) blocked = true;
+                    });
+
+                    if (!blocked) {
+                        visited.add(key);
+                        const newDist = dist + 1;
+                        distMap[key] = newDist;
+                        queue.push({ r: nr, c: nc, dist: newDist });
+                    }
+                }
+            }
+            return distMap;
         }
 
         // ==================== 渲染棋盘 ====================
@@ -334,7 +371,7 @@
             if (STATE.selected) highlightRanges();
         }
 
-        // ==================== 高亮范围（移动范围 + 移动范围内一圈深色攻击范围） ====================
+        // ==================== 高亮范围（移动范围 + 攻击圈） ====================
         function highlightRanges() {
             const cells = document.querySelectorAll(".grid-cell");
             const sel = STATE.selected;
@@ -344,115 +381,118 @@
             if (!unit || unit.hp <= 0) return;
 
             const config = UNIT_TYPES[unit.type];
+            // 友方使用剩余移动步数，敌方使用满移动范围（仅查看）
+            const maxMove = (sel.team === "friendly") 
+                ? (unit.remainingMove || config.moveRange) 
+                : config.moveRange;
+
+            const reachable = calculateReachable(unit.row, unit.col, maxMove);
 
             cells.forEach(cell => {
                 const r = parseInt(cell.dataset.row);
                 const c = parseInt(cell.dataset.col);
                 cell.classList.remove("highlight-move", "highlight-attack");
 
-                const manhattan = Math.abs(r - unit.row) + Math.abs(c - unit.col);
+                const key = `${r},${c}`;
+                const dist = reachable[key];
 
-                // 1. 移动范围（绿色）
-                if (manhattan <= config.moveRange) {
-                    let occupied = false;
-                    [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
-                        if (u.hp > 0 && u.row === r && u.col === c) occupied = true;
-                    });
-                    if (!occupied) cell.classList.add("highlight-move");
+                // 移动范围（绿色）
+                if (dist !== undefined && dist > 0) {
+                    cell.classList.add("highlight-move");
                 }
 
-                // 2. 攻击范围（从当前位置计算，深红色一圈，叠加在移动范围内）
+                // 攻击范围（深红色一圈，从当前位置计算）
+                const manhattan = Math.abs(r - unit.row) + Math.abs(c - unit.col);
                 if (manhattan <= config.atkRange) {
                     cell.classList.add("highlight-attack");
                 }
             });
         }
 
-        // ==================== 处理格子点击 ====================
+        // ==================== 处理格子点击（核心逻辑） ====================
         function handleCellClick(row, col) {
             if (STATE.currentTurn !== "player") return;
 
-            const sel = STATE.selected;
-
-            // === 未选中时：点击任意存活单位都可选中（友方或敌方） ===
-            if (!sel) {
-                // 检查友方
-                for (let u of STATE.friendlyUnits) {
-                    if (u.hp > 0 && u.row === row && u.col === col) {
-                        STATE.selected = { team: "friendly", id: u.id };
-                        STATE.phase = "select";
-                        addLog(`选中 <span class="text-emerald-400">${UNIT_TYPES[u.type].emoji} ${UNIT_TYPES[u.type].name}</span>`, "emerald");
-                        renderBoard();
-                        updateSelectedPanel();
-                        return;
-                    }
+            // 先判断点击位置是否有单位
+            let clickedUnit = null;
+            let clickedTeam = null;
+            for (let u of STATE.friendlyUnits) {
+                if (u.hp > 0 && u.row === row && u.col === col) {
+                    clickedUnit = u; clickedTeam = "friendly"; break;
                 }
-                // 检查敌方
+            }
+            if (!clickedUnit) {
                 for (let u of STATE.enemyUnits) {
                     if (u.hp > 0 && u.row === row && u.col === col) {
-                        STATE.selected = { team: "enemy", id: u.id };
-                        STATE.phase = "select";
-                        addLog(`查看敌方 <span class="text-rose-400">${UNIT_TYPES[u.type].emoji} ${UNIT_TYPES[u.type].name}</span>`, "rose");
-                        renderBoard();
-                        updateSelectedPanel();
-                        return;
+                        clickedUnit = u; clickedTeam = "enemy"; break;
                     }
                 }
-                return;
             }
 
-            const unit = getUnit(sel.team, sel.id);
-            if (!unit) return;
+            // ==================== 点击单位格子 ====================
+            if (clickedUnit) {
+                const sel = STATE.selected;
 
-            // === 点击自身 → 取消选中 ===
-            if (unit.row === row && unit.col === col) {
-                deselectUnit();
-                return;
-            }
-
-            const manhattan = Math.abs(row - unit.row) + Math.abs(col - unit.col);
-            const config = UNIT_TYPES[unit.type];
-
-            // === 只有友方未行动的单位才能移动/攻击 ===
-            const canAct = sel.team === "friendly" && !unit.actedThisTurn;
-
-            // 移动阶段
-            if (STATE.phase === "select" && canAct && manhattan <= config.moveRange) {
-                let occupied = false;
-                [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
-                    if (u.hp > 0 && u.row === row && u.col === col) occupied = true;
-                });
-                if (occupied) {
-                    addLog("⚠️ 该格子已被占据", "amber");
+                // 点击自身 → 取消选中
+                if (sel && sel.team === clickedTeam && sel.id === clickedUnit.id) {
+                    deselectUnit();
                     return;
                 }
 
-                unit.row = row;
-                unit.col = col;
-                STATE.phase = "moved";
-                addLog(`移动到 <span class="font-mono">(${row},${col})</span>`, "emerald");
+                // 当前选中友方 + 点击敌方 + 可攻击 → 执行攻击（攻击后仍保持选中，可继续移动）
+                if (sel && sel.team === "friendly" && clickedTeam === "enemy") {
+                    const actor = getUnit("friendly", sel.id);
+                    if (actor && !actor.hasAttacked) {
+                        const manhattan = Math.abs(actor.row - row) + Math.abs(actor.col - col);
+                        if (manhattan <= UNIT_TYPES[actor.type].atkRange) {
+                            performAttack(actor, clickedUnit);
+                            actor.hasAttacked = true;
+                            renderBoard();
+                            updateSelectedPanel();
+                            updateAllLists();
+                            checkGameOver();
+                            return;   // 攻击后仍保持选中状态
+                        }
+                    }
+                }
+
+                // 其他情况 → 切换选中该单位（友方或敌方均可查看）
+                STATE.selected = { team: clickedTeam, id: clickedUnit.id };
+                addLog(`选中 ${clickedTeam === "friendly" ? "友方" : "敌方"} <span class="text-${clickedTeam === "friendly" ? "emerald" : "rose"}-400">${UNIT_TYPES[clickedUnit.type].emoji} ${UNIT_TYPES[clickedUnit.type].name}</span>`, clickedTeam === "friendly" ? "emerald" : "rose");
                 renderBoard();
                 updateSelectedPanel();
                 return;
             }
 
-            // 攻击阶段
-            if (STATE.phase === "moved" && canAct && manhattan <= config.atkRange) {
-                const target = STATE.enemyUnits.find(e => e.hp > 0 && e.row === row && e.col === col);
-                if (target) {
-                    performAttack(unit, target);
-                    unit.actedThisTurn = true;
-                    STATE.selected = null;
-                    STATE.phase = "select";
-                    renderBoard();
-                    updateAllLists();
-                    updateSelectedPanel();
-                    checkGameOver();
-                    return;
-                }
+            // ==================== 点击空白格子 ====================
+            const sel = STATE.selected;
+            if (!sel || sel.team !== "friendly") {
+                deselectUnit();
+                return;
             }
 
-            // 其他情况 → 取消选中
+            const unit = getUnit("friendly", sel.id);
+            if (!unit || unit.remainingMove <= 0) {
+                deselectUnit();
+                return;
+            }
+
+            const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove);
+            const key = `${row},${col}`;
+            const dist = reachable[key];
+
+            if (dist !== undefined && dist > 0) {
+                // 执行移动（扣除实际步数）
+                unit.row = row;
+                unit.col = col;
+                unit.remainingMove -= dist;
+                addLog(`移动 <span class="font-mono">${dist}</span> 格（剩余 <span class="font-mono">${unit.remainingMove}</span>）`, "emerald");
+                renderBoard();
+                updateSelectedPanel();
+                return;
+            }
+
+            // 不可达 → 取消选中
             deselectUnit();
         }
 
@@ -464,7 +504,7 @@
 
             defender.hp = Math.max(0, defender.hp - damage);
 
-            const attackerColor = attacker.type === "knight" || attacker.type === "archer" ? "emerald" : "rose";
+            const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
             addLog(`<span class="text-${attackerColor}-400">${aConfig.emoji}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
 
             renderBoard();
@@ -474,17 +514,14 @@
         // ==================== 取消选中 ====================
         function deselectUnit() {
             STATE.selected = null;
-            STATE.phase = "select";
             renderBoard();
             updateSelectedPanel();
         }
 
-        // ==================== 敌方AI回合 ====================
+        // ==================== 敌方AI回合（保持单次行动） ====================
         function enemyTurn() {
             STATE.currentTurn = "enemy";
             updateUI();
-
-            STATE.enemyUnits.forEach(u => u.actedThisTurn = false);
 
             addLog("🔴 敌方回合开始...", "rose");
 
@@ -496,7 +533,7 @@
                 }
 
                 const enemy = STATE.enemyUnits[index];
-                if (enemy.hp <= 0 || enemy.actedThisTurn) {
+                if (enemy.hp <= 0) {
                     index++;
                     actNextEnemy();
                     return;
@@ -525,6 +562,7 @@
                 let bestR = enemy.row, bestC = enemy.col;
                 let bestDist = Infinity;
 
+                // 简单AI移动（BFS风格，但简化版）
                 for (let dr = -config.moveRange; dr <= config.moveRange; dr++) {
                     for (let dc = -config.moveRange; dc <= config.moveRange; dc++) {
                         const nr = enemy.row + dr;
@@ -556,7 +594,6 @@
                 if (afterDist <= config.atkRange) {
                     setTimeout(() => {
                         performAttack(enemy, closest);
-                        enemy.actedThisTurn = true;
                         renderBoard();
                         updateAllLists();
                         checkGameOver();
@@ -564,7 +601,6 @@
                         setTimeout(actNextEnemy, 700);
                     }, 650);
                 } else {
-                    enemy.actedThisTurn = true;
                     index++;
                     setTimeout(actNextEnemy, 700);
                 }
@@ -576,7 +612,14 @@
         function finishEnemyTurn() {
             STATE.currentTurn = "player";
             STATE.turnCount++;
-            STATE.friendlyUnits.forEach(u => u.actedThisTurn = false);
+            // 重置友方本回合行动资源
+            STATE.friendlyUnits.forEach(u => {
+                if (u.hp > 0) {
+                    const config = UNIT_TYPES[u.type];
+                    u.remainingMove = config.moveRange;
+                    u.hasAttacked = false;
+                }
+            });
             renderBoard();
             updateUI();
             updateSelectedPanel();
@@ -589,7 +632,7 @@
             enemyTurn();
         }
 
-        // ==================== 更新选中面板 ====================
+        // ==================== 更新选中面板（显示剩余移动） ====================
         function updateSelectedPanel() {
             const panel = document.getElementById("selected-panel");
             if (!STATE.selected) {
@@ -619,8 +662,14 @@
 
             document.getElementById("selected-atk").textContent = config.atk;
             document.getElementById("selected-def").textContent = config.def;
-            document.getElementById("selected-move").textContent = config.moveRange;
             document.getElementById("selected-range").textContent = config.atkRange;
+
+            // 显示剩余移动（敌方显示满值）
+            const remaining = (STATE.selected.team === "friendly") 
+                ? unit.remainingMove 
+                : config.moveRange;
+            document.getElementById("selected-remaining-move").innerHTML = 
+                `<span class="text-emerald-400">${remaining}</span> / ${config.moveRange}`;
 
             panel.classList.remove("hidden");
         }
@@ -711,26 +760,45 @@
             document.getElementById("result-modal").classList.add("hidden");
         }
 
-        // ==================== 重置游戏（2友方 + 2敌方） ====================
+        // ==================== 重置游戏 ====================
         function resetGame() {
             STATE.friendlyUnits = [
-                { id: "f1", type: "knight", row: 1, col: 2, hp: UNIT_TYPES.knight.hp, maxHp: UNIT_TYPES.knight.hp, actedThisTurn: false },
-                { id: "f2", type: "archer", row: 1, col: 5, hp: UNIT_TYPES.archer.hp, maxHp: UNIT_TYPES.archer.hp, actedThisTurn: false }
+                { 
+                    id: "f1", type: "knight", row: 1, col: 2, 
+                    hp: UNIT_TYPES.knight.hp, maxHp: UNIT_TYPES.knight.hp,
+                    remainingMove: UNIT_TYPES.knight.moveRange,
+                    hasAttacked: false
+                },
+                { 
+                    id: "f2", type: "archer", row: 1, col: 5, 
+                    hp: UNIT_TYPES.archer.hp, maxHp: UNIT_TYPES.archer.hp,
+                    remainingMove: UNIT_TYPES.archer.moveRange,
+                    hasAttacked: false
+                }
             ];
 
             STATE.enemyUnits = [
-                { id: "e1", type: "heavy", row: 8, col: 7, hp: UNIT_TYPES.heavy.hp, maxHp: UNIT_TYPES.heavy.hp, actedThisTurn: false },
-                { id: "e2", type: "mage", row: 8, col: 3, hp: UNIT_TYPES.mage.hp, maxHp: UNIT_TYPES.mage.hp, actedThisTurn: false }
+                { 
+                    id: "e1", type: "heavy", row: 8, col: 7, 
+                    hp: UNIT_TYPES.heavy.hp, maxHp: UNIT_TYPES.heavy.hp,
+                    remainingMove: UNIT_TYPES.heavy.moveRange,
+                    hasAttacked: false
+                },
+                { 
+                    id: "e2", type: "mage", row: 8, col: 3, 
+                    hp: UNIT_TYPES.mage.hp, maxHp: UNIT_TYPES.mage.hp,
+                    remainingMove: UNIT_TYPES.mage.moveRange,
+                    hasAttacked: false
+                }
             ];
 
             STATE.currentTurn = "player";
             STATE.turnCount = 1;
             STATE.selected = null;
-            STATE.phase = "select";
 
             document.getElementById("log-container").innerHTML = "";
             addLog("🎮 新一局开始！友方 2 单位 vs 敌方 2 单位", "emerald");
-            addLog("点击任意单位可查看属性与范围", "emerald");
+            addLog("点击任意单位可查看属性 • 友方可多次移动 + 攻击1次", "emerald");
 
             renderBoard();
             updateAllLists();
