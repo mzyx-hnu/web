@@ -40,13 +40,11 @@
             box-shadow: 0 0 0 6px rgb(239 68 68) inset;
             animation: attackPulse 2s infinite;
         }
-        /* 新增：技能范围高亮（青色，区别于普通攻击） */
         .highlight-skill {
             background: rgba(165, 243, 252, 0.68) !important;
             box-shadow: 0 0 0 6px rgb(165 243 252) inset;
             animation: attackPulse 2s infinite;
         }
-        /* 重叠格子闪烁（移动+攻击范围重合时） */
         .highlight-overlap {
             background: rgba(16, 185, 129, 0.45) !important;
             animation: overlapFlicker 1s infinite alternate ease-in-out;
@@ -56,7 +54,6 @@
             100% { background: rgba(239, 68, 68, 0.68) !important; box-shadow: 0 0 0 6px rgb(239 68 68) inset; }
         }
 
-        /* ====================== 支持战斗单位 + 地形单位同时显示 ====================== */
         .unit-cell::before {
             content: attr(data-combat);
             font-size: 2.25rem;
@@ -107,7 +104,7 @@
                     <span id="turn-team" class="turn-indicator">🟦 玩家回合</span>
                     <span id="turn-number" class="font-mono text-xl text-white">01</span>
                 </div>
-                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击1次 • 重叠格子闪烁 • 新增技能系统</div>
+                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击/技能1次 • 技能伤害显示 • 敌方AI技能 • 回蓝点/回血点</div>
             </div>
 
             <button onclick="endPlayerTurn()" 
@@ -132,6 +129,9 @@
                     <p class="text-amber-300">• 山峰 ⛰️：不可进入</p>
                     <p class="text-amber-300">• 河流 🌊：进入后剩余移动仅1格</p>
                     <p class="text-amber-300">• 森林 🌲：进入后移动/攻击-1（最低1），外部单位只能相邻攻击森林内单位</p>
+                    <!-- 新增规则说明 -->
+                    <p class="text-cyan-400">• 未使用技能回合结束 +2 蓝量</p>
+                    <p class="text-cyan-400">• 每回合随机生成回蓝点🔵 / 回血点❤️（地形），踩踏生效并消失</p>
                 </div>
                 
                 <div class="mt-4">
@@ -183,7 +183,6 @@
                             <span class="font-bold text-sky-300">🛡️ 防御力 DEF</span>
                             <span id="selected-def" class="font-mono text-xl font-bold"></span>
                         </div>
-                        <!-- 新增：蓝量显示 -->
                         <div class="flex justify-between items-center text-sm">
                             <span class="font-bold text-cyan-300">🔵 蓝量 MANA</span>
                             <span id="selected-mana" class="font-mono text-xl font-bold"></span>
@@ -198,7 +197,6 @@
                         </div>
                     </div>
 
-                    <!-- 新增：技能选择面板（完全解耦，可自由扩展） -->
                     <div id="skill-selection" class="hidden bg-slate-900/60 rounded-2xl p-4 mt-4">
                         <div class="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-3 flex items-center gap-2">
                             <span>🔵</span> 技能选择（攻击行动替代）
@@ -219,7 +217,7 @@
                 
                 <div class="text-[10px] text-slate-400 mt-4 pt-4 border-t border-white/10">
                     当前回合：<span id="log-turn" class="font-mono">1</span><br>
-                    敌方AI简单行动（避开山峰）
+                    敌方AI已支持技能释放
                 </div>
             </div>
         </div>
@@ -241,11 +239,15 @@
     <script>
         /**
          * ====================== 配置模块（GAME_CONFIG）======================
-         * 完全解耦：单位定义、技能定义、初始位置全部集中在这里
-         * 新增：SKILLS 对象 + 每个战斗单位引用技能ID，实现零侵入扩展
+         * 完全解耦核心：单位定义、技能定义、地形效果全部集中在这里
+         * 新增特性：
+         *   1. 技能属性新增 damage（已在UI技能按钮中显示）
+         *   2. 地形单位完全可扩展：在 UNIT_TYPES 中新增任意地形，配置 effect / value / temporary
+         *      - 已有地形（mountain/river/forest）保持兼容
+         *      - 新增回蓝点/回血点（temporary: true，踩踏后自动消失）
+         *   3. 敌方单位自动继承相同技能配置（normalSkills + ultSkill）
          */
         const GAME_CONFIG = {
-            // 单位/地形定义（新增 mana + normalSkills + ultSkill）
             UNIT_TYPES: {
                 knight:  { 
                     emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, 
@@ -267,19 +269,24 @@
                     mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike",
                     isTerrain: false 
                 },
-                mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true },
-                river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true },
-                forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true }
+                // ====================== 地形单位完全解耦扩展点 ======================
+                // 新增任意地形只需在这里定义 effect / value / temporary 即可
+                mountain: { emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true, temporary: false },
+                river:    { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false },
+                forest:   { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false },
+                // 新增：回蓝点 / 回血点（每回合随机生成，踩踏生效并消失）
+                manaPoint:{ emoji: "🔵", name: "回蓝点", desc: "踩踏后恢复5点蓝量", isTerrain: true, temporary: true, effect: "mana", value: 5 },
+                healPoint:{ emoji: "❤️", name: "回血点", desc: "踩踏后恢复5点生命", isTerrain: true, temporary: true, effect: "heal", value: 5 }
             },
 
-            // 新增：技能定义（完全独立，可任意新增技能）
+            // 技能定义（完全独立，可任意新增）
             SKILLS: {
                 doubleStrike: {
                     emoji: "⚔️",
                     name: "双重斩击",
                     manaCost: 4,
                     range: 1,
-                    damage: 15,
+                    damage: 15,          // ← 已标注伤害，UI中会显示
                     desc: "近战高威力斩击"
                 },
                 precisionShot: {
@@ -316,7 +323,6 @@
                 }
             },
 
-            // 初始布局（位置完全独立）
             INITIAL: {
                 friendly: [
                     { id: "f1", type: "knight", row: 1, col: 2 },
@@ -340,10 +346,6 @@
             BOARD_SIZE: 10
         };
 
-        /**
-         * ====================== 状态模块（STATE）======================
-         * 新增：selectedSkill（技能激活状态）
-         */
         let STATE = {
             friendlyUnits: [],
             enemyUnits: [],
@@ -351,12 +353,9 @@
             currentTurn: "player",
             turnCount: 1,
             selected: null,
-            selectedSkill: null   // 新增：当前激活的技能ID（null = 未激活）
+            selectedSkill: null
         };
 
-        /**
-         * ====================== 辅助函数 ======================
-         */
         function addLog(message, color = "slate") {
             const container = document.getElementById("log-container");
             const div = document.createElement("div");
@@ -385,14 +384,11 @@
                 hasAttacked: false,
                 forestModifier: false,
                 maxMana: config.mana,
-                currentMana: config.mana
+                currentMana: config.mana,
+                skillUsedThisTurn: false   // 新增：本回合是否已释放技能（用于 +2 蓝量判定）
             };
         }
 
-        /**
-         * ====================== 通用范围判断（复用） ======================
-         * 攻击范围和技能范围共用此逻辑（森林防御特性）
-         */
         function isInRange(unit, targetRow, targetCol, range) {
             const manhattan = Math.abs(unit.row - targetRow) + Math.abs(unit.col - targetCol);
             const targetTerrain = STATE.terrainUnits.find(t => t.row === targetRow && t.col === targetCol);
@@ -402,10 +398,6 @@
             return manhattan <= range;
         }
 
-        /**
-         * ====================== 棋盘渲染模块 ======================
-         * 已支持战斗+地形同时显示
-         */
         function getCellContent(row, col) {
             let combatUnit = null;
             let combatTeam = null;
@@ -466,11 +458,6 @@
             if (STATE.selected) highlightRanges();
         }
 
-        /**
-         * ====================== 高亮模块（优化 + 新特性） ======================
-         * 1. 修复：攻击后不再渲染攻击范围（hasAttacked 时隐藏攻击高亮）
-         * 2. 新增：技能激活时只显示技能范围（青色）
-         */
         function highlightRanges() {
             const cells = document.querySelectorAll(".grid-cell");
             const sel = STATE.selected;
@@ -484,7 +471,6 @@
                 return;
             }
 
-            // 普通模式
             const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             let maxMove = (sel.team === "friendly") ? entity.remainingMove : config.moveRange;
             if (maxMove <= 0) maxMove = 0;
@@ -493,7 +479,6 @@
             let effectiveAtk = entity.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
             if (effectiveAtk <= 0) effectiveAtk = 0;
 
-            // 修复：攻击后不再显示攻击范围
             const hasActionLeft = sel.team === "friendly" ? !entity.hasAttacked : true;
 
             cells.forEach(cell => {
@@ -546,9 +531,6 @@
             });
         }
 
-        /**
-         * ====================== 操作逻辑模块（新增技能逻辑） ======================
-         */
         function calculateReachable(startRow, startCol, maxMove, unit) {
             const directions = [[-1,0],[1,0],[0,-1],[0,1]];
             const distMap = {};
@@ -587,11 +569,20 @@
             return distMap;
         }
 
+        /**
+         * ====================== 地形效果处理（完全解耦） ======================
+         * 所有地形效果（包括新增回蓝/回血点）都在这里统一处理
+         * 新增地形只需在 GAME_CONFIG.UNIT_TYPES 中配置 effect/value/temporary 即可生效
+         */
         function applyTerrainEffect(unit) {
-            const terrain = STATE.terrainUnits.find(t => t.row === unit.row && t.col === unit.col);
-            unit.forestModifier = false;
-            if (!terrain) return;
+            const terrainIndex = STATE.terrainUnits.findIndex(t => t.row === unit.row && t.col === unit.col);
+            if (terrainIndex === -1) return;
+            const terrain = STATE.terrainUnits[terrainIndex];
             const tConfig = GAME_CONFIG.UNIT_TYPES[terrain.type];
+
+            unit.forestModifier = false;
+
+            // 传统地形效果
             if (terrain.type === "river") {
                 unit.remainingMove = Math.min(unit.remainingMove, 1);
                 addLog(`进入🌊河流，剩余移动限制为 <span class="font-mono">1</span> 格`, "amber");
@@ -599,6 +590,21 @@
                 unit.forestModifier = true;
                 if (unit.remainingMove > 0) unit.remainingMove = Math.max(0, unit.remainingMove - 1);
                 addLog(`进入🌲森林，移动与攻击范围 -1`, "amber");
+            } 
+            // 新增可扩展效果（回蓝点 / 回血点）
+            else if (tConfig.effect) {
+                if (tConfig.effect === "mana") {
+                    unit.currentMana = Math.min(unit.maxMana, unit.currentMana + tConfig.value);
+                    addLog(`踩到 ${tConfig.emoji} 回蓝点，恢复 <span class="font-mono">${tConfig.value}</span> 蓝量`, "cyan");
+                } else if (tConfig.effect === "heal") {
+                    unit.hp = Math.min(unit.maxHp, unit.hp + tConfig.value);
+                    addLog(`踩到 ${tConfig.emoji} 回血点，恢复 <span class="font-mono">${tConfig.value}</span> 生命`, "emerald");
+                }
+
+                // temporary 地形踩踏后自动消失
+                if (tConfig.temporary) {
+                    STATE.terrainUnits.splice(terrainIndex, 1);
+                }
             }
         }
 
@@ -627,9 +633,6 @@
             addLog(`<span class="text-${attackerColor}-400">${aConfig.emoji}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
         }
 
-        /**
-         * 新增：技能释放逻辑
-         */
         function performSkill(attacker, skillId, defender) {
             const skill = GAME_CONFIG.SKILLS[skillId];
             const dConfig = GAME_CONFIG.UNIT_TYPES[defender.type];
@@ -653,7 +656,7 @@
 
         function selectUnit(team, id) {
             STATE.selected = { team, id };
-            STATE.selectedSkill = null;   // 切换单位时取消技能模式
+            STATE.selectedSkill = null;
             const entity = getUnit(team, id);
             const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             const teamText = team === "friendly" ? "友方" : (team === "enemy" ? "敌方" : "地形");
@@ -669,13 +672,9 @@
             updateSelectedPanel();
         }
 
-        /**
-         * 主点击处理（新增技能模式优先判断）
-         */
         function handleCellClick(row, col) {
             if (STATE.currentTurn !== "player") return;
 
-            // ==================== 新特性：技能模式优先处理 ====================
             if (STATE.selectedSkill) {
                 const { combatUnit, combatTeam } = getCellContent(row, col);
                 if (combatTeam === "enemy") {
@@ -685,7 +684,8 @@
                     if (actor && skill && isInRange(actor, row, col, skill.range)) {
                         performSkill(actor, skillId, combatUnit);
                         actor.currentMana -= skill.manaCost;
-                        actor.hasAttacked = true;   // 技能视为一次攻击行动
+                        actor.hasAttacked = true;
+                        actor.skillUsedThisTurn = true;   // 标记已使用技能
                         STATE.selectedSkill = null;
                         renderBoard();
                         updateSelectedPanel();
@@ -694,14 +694,12 @@
                         return;
                     }
                 }
-                // 点击非敌方或范围外 → 取消技能
                 STATE.selectedSkill = null;
                 renderBoard();
                 updateSelectedPanel();
                 return;
             }
 
-            // ==================== 原有逻辑 ====================
             const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
             const sel = STATE.selected;
 
@@ -753,7 +751,9 @@
         }
 
         /**
-         * ====================== 敌方AI与回合控制 ======================
+         * ====================== 敌方AI增强（支持技能释放） ======================
+         * 敌方完全继承技能配置，移动后优先选择伤害最高的可用技能（解耦）
+         * 普通攻击不标记 skillUsedThisTurn，技能才标记
          */
         function enemyTurn() {
             STATE.currentTurn = "enemy";
@@ -817,22 +817,47 @@
                 enemy.row = bestR;
                 enemy.col = bestC;
                 addLog(`<span class="text-rose-400">${config.emoji} ${config.name}</span> 移动到 (${bestR},${bestC})`, "rose");
+
+                applyTerrainEffect(enemy);   // 敌方也可触发回蓝/回血点
                 renderBoard();
 
                 const afterDist = Math.abs(bestR - closest.row) + Math.abs(bestC - closest.col);
-                if (afterDist <= config.atkRange) {
-                    setTimeout(() => {
-                        performAttack(enemy, closest);
-                        renderBoard();
-                        updateAllLists();
-                        checkGameOver();
-                        index++;
-                        setTimeout(actNextEnemy, 700);
-                    }, 650);
-                } else {
-                    index++;
-                    setTimeout(actNextEnemy, 700);
+
+                // 敌方技能决策（优先最高伤害技能）
+                let usedSkill = false;
+                const possibleSkills = (config.normalSkills || []).concat(config.ultSkill ? [config.ultSkill] : []);
+                let bestSkill = null;
+                let bestDmg = 0;
+
+                for (let sid of possibleSkills) {
+                    const sk = GAME_CONFIG.SKILLS[sid];
+                    if (sk && enemy.currentMana >= sk.manaCost && isInRange(enemy, closest.row, closest.col, sk.range)) {
+                        const dmg = Math.max(1, sk.damage - GAME_CONFIG.UNIT_TYPES[closest.type].def);
+                        if (dmg > bestDmg) {
+                            bestDmg = dmg;
+                            bestSkill = sid;
+                        }
+                    }
                 }
+
+                if (bestSkill) {
+                    const skill = GAME_CONFIG.SKILLS[bestSkill];
+                    performSkill(enemy, bestSkill, closest);
+                    enemy.currentMana -= skill.manaCost;
+                    enemy.skillUsedThisTurn = true;
+                    usedSkill = true;
+                    addLog(`<span class="text-rose-400">${config.emoji}</span> 使用技能 <span class="text-cyan-400">${skill.emoji} ${skill.name}</span>`, "rose");
+                } else if (afterDist <= config.atkRange) {
+                    performAttack(enemy, closest);
+                    // 普通攻击不标记 skillUsedThisTurn
+                }
+
+                renderBoard();
+                updateAllLists();
+                checkGameOver();
+
+                index++;
+                setTimeout(actNextEnemy, usedSkill || afterDist <= config.atkRange ? 700 : 400);
             };
 
             setTimeout(actNextEnemy, 800);
@@ -841,16 +866,18 @@
         function finishEnemyTurn() {
             STATE.currentTurn = "player";
             STATE.turnCount++;
-            STATE.friendlyUnits.forEach(u => {
-                if (u.hp > 0) {
-                    const config = GAME_CONFIG.UNIT_TYPES[u.type];
-                    u.remainingMove = config.moveRange;
-                    u.hasAttacked = false;
-                    u.forestModifier = false;
-                    u.currentMana = u.maxMana;   // 每回合恢复满蓝量
-                }
-            });
+
+            // 敌方回合结束：未使用技能的单位 +2 蓝量
+            applyManaRegen("enemy");
+
+            // 重置玩家单位（新回合开始）
+            resetActionsForTeam("friendly");
+
             STATE.selectedSkill = null;
+
+            // 每回合生成一个随机回蓝/回血点（地形）
+            generatePowerUp();
+
             renderBoard();
             updateUI();
             updateSelectedPanel();
@@ -860,12 +887,66 @@
         function endPlayerTurn() {
             if (STATE.currentTurn !== "player") return;
             deselectUnit();
+            // 玩家回合结束：未使用技能的单位 +2 蓝量
+            applyManaRegen("friendly");
             enemyTurn();
         }
 
         /**
-         * ====================== UI 更新模块（新增技能面板 + 蓝量） ======================
+         * 未使用技能的单位回蓝逻辑（解耦）
          */
+        function applyManaRegen(team) {
+            const units = team === "friendly" ? STATE.friendlyUnits : STATE.enemyUnits;
+            let anyRegen = false;
+            units.forEach(u => {
+                if (u.hp > 0 && !u.skillUsedThisTurn) {
+                    u.currentMana = Math.min(u.maxMana, u.currentMana + 2);
+                    anyRegen = true;
+                }
+            });
+            if (team === "friendly" && anyRegen) {
+                addLog(`本回合未使用技能，友方单位回复 <span class="font-mono">2</span> 蓝量`, "cyan");
+            }
+        }
+
+        /**
+         * 单位回合开始重置（解耦）
+         */
+        function resetActionsForTeam(team) {
+            const units = team === "friendly" ? STATE.friendlyUnits : STATE.enemyUnits;
+            units.forEach(u => {
+                if (u.hp > 0) {
+                    const config = GAME_CONFIG.UNIT_TYPES[u.type];
+                    u.remainingMove = config.moveRange;
+                    u.hasAttacked = false;
+                    u.forestModifier = false;
+                    u.skillUsedThisTurn = false;
+                }
+            });
+        }
+
+        /**
+         * 每回合生成一个随机回蓝/回血点（完全基于地形解耦）
+         */
+        function generatePowerUp() {
+            let candidates = [];
+            for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
+                for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
+                    const hasUnit = [...STATE.friendlyUnits, ...STATE.enemyUnits].some(u => u.hp > 0 && u.row === r && u.col === c);
+                    const hasTerrain = STATE.terrainUnits.some(t => t.row === r && t.col === c);
+                    if (!hasUnit && !hasTerrain) candidates.push({r, c});
+                }
+            }
+            if (candidates.length === 0) return;
+
+            const pos = candidates[Math.floor(Math.random() * candidates.length)];
+            const type = Math.random() > 0.5 ? "manaPoint" : "healPoint";
+            const id = "pu_" + Date.now();
+
+            STATE.terrainUnits.push({ id, type, row: pos.r, col: pos.c });
+            addLog(`生成新地形 <span class="text-cyan-400">${GAME_CONFIG.UNIT_TYPES[type].emoji} ${GAME_CONFIG.UNIT_TYPES[type].name}</span>`, "cyan");
+        }
+
         function updateSelectedPanel() {
             const panel = document.getElementById("selected-panel");
             if (!STATE.selected) {
@@ -905,8 +986,6 @@
 
                 document.getElementById("selected-atk").textContent = config.atk;
                 document.getElementById("selected-def").textContent = config.def;
-
-                // 蓝量
                 document.getElementById("selected-mana").innerHTML = `<span class="text-cyan-400">${entity.currentMana}</span> / ${entity.maxMana}`;
 
                 const remaining = STATE.selected.team === "friendly" ? entity.remainingMove : config.moveRange;
@@ -915,14 +994,12 @@
                 const effectiveAtk = entity.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
                 document.getElementById("selected-range").innerHTML = `<span class="text-rose-400">${effectiveAtk}</span>`;
 
-                // ==================== 技能面板逻辑 ====================
                 const skillDiv = document.getElementById("skill-selection");
                 const skillsList = document.getElementById("skills-list");
                 if (STATE.selected.team === "friendly" && !entity.hasAttacked) {
                     skillDiv.classList.remove("hidden");
                     skillsList.innerHTML = "";
 
-                    // 普通技能
                     (config.normalSkills || []).forEach(skillId => {
                         const skill = GAME_CONFIG.SKILLS[skillId];
                         if (!skill) return;
@@ -933,14 +1010,13 @@
                             <span class="text-3xl">${skill.emoji}</span>
                             <div class="flex-1">
                                 <div class="font-bold">${skill.name}</div>
-                                <div class="text-[10px] text-cyan-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span></div>
+                                <div class="text-[10px] text-cyan-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span> • 伤害 ${skill.damage}</div>
                             </div>
                         `;
                         if (canUse) btn.onclick = () => activateSkill(skillId);
                         skillsList.appendChild(btn);
                     });
 
-                    // 终极技能（特殊样式）
                     if (config.ultSkill) {
                         const skill = GAME_CONFIG.SKILLS[config.ultSkill];
                         if (skill) {
@@ -951,7 +1027,7 @@
                                 <span class="text-3xl">${skill.emoji}</span>
                                 <div class="flex-1">
                                     <div class="font-bold">【终极】${skill.name}</div>
-                                    <div class="text-[10px] text-amber-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span></div>
+                                    <div class="text-[10px] text-amber-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span> • 伤害 ${skill.damage}</div>
                                 </div>
                             `;
                             if (canUse) btn.onclick = () => activateSkill(config.ultSkill);
@@ -1026,9 +1102,6 @@
             document.getElementById("result-modal").classList.add("hidden");
         }
 
-        /**
-         * ====================== 重置游戏 ======================
-         */
         function resetGame() {
             STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(createCombatUnit);
             STATE.enemyUnits = GAME_CONFIG.INITIAL.enemy.map(createCombatUnit);
@@ -1042,7 +1115,11 @@
             document.getElementById("log-container").innerHTML = "";
             addLog("🎮 新一局开始！友方 2 单位 vs 敌方 2 单位", "emerald");
             addLog("地图上已生成 <span class='text-amber-300'>山峰、河流、森林</span> 地形", "amber");
-            addLog("点击单位可选择技能（攻击后无法再行动）", "cyan");
+            addLog("点击单位可选择技能（伤害已在技能面板显示）", "cyan");
+
+            resetActionsForTeam("friendly");
+            resetActionsForTeam("enemy");
+            generatePowerUp();   // 开局生成一个回蓝/回血点
 
             renderBoard();
             updateAllLists();
