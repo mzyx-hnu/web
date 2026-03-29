@@ -50,8 +50,12 @@
             100% { background: rgba(239, 68, 68, 0.68) !important; box-shadow: 0 0 0 6px rgb(239 68 68) inset; }
         }
 
-        .unit-cell::after {
-            content: attr(data-unit);
+        /* ====================== 关键修改：支持战斗单位 + 地形单位同时显示 ====================== */
+        /* 战斗单位 emoji 使用 ::before（左上角，大字号） */
+        /* 地形单位 emoji 使用 ::after（右下角，小字号） */
+        /* 即使同一个格子有战斗单位和地形，也能同时渲染两个 emoji */
+        .unit-cell::before {
+            content: attr(data-combat);
             font-size: 2.25rem;
             position: absolute;
             top: 4px;
@@ -60,7 +64,7 @@
             z-index: 20;
             pointer-events: none;
         }
-        .terrain-overlay {
+        .unit-cell::after {
             content: attr(data-terrain);
             font-size: 1.8rem;
             position: absolute;
@@ -71,9 +75,6 @@
             pointer-events: none;
             opacity: 0.95;
         }
-
-        @keyframes movePulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
-        @keyframes attackPulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
 
         .hp-bar { height: 8px; background: #1e2937; border-radius: 9999px; overflow: hidden; }
         .hp-fill { height: 100%; transition: width 0.4s ease; }
@@ -221,16 +222,51 @@
     </div>
 
     <script>
-        const UNIT_TYPES = {
-            knight: { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, isTerrain: false },
-            archer: { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, isTerrain: false },
-            heavy:  { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, isTerrain: false },
-            mage:   { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, isTerrain: false },
-            mountain: { emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true },
-            river:    { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true },
-            forest:   { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true }
+        /**
+         * ====================== 配置模块（GAME_CONFIG）======================
+         * 完全解耦：单位定义、初始位置全部集中在这里
+         * 后续新增单位/地形/初始布局，只需要修改这里即可，不影响其他任何逻辑或渲染代码
+         */
+        const GAME_CONFIG = {
+            // 单位/地形定义（可自由扩展属性）
+            UNIT_TYPES: {
+                knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, isTerrain: false },
+                archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, isTerrain: false },
+                heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, isTerrain: false },
+                mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, isTerrain: false },
+                mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true },
+                river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true },
+                forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true }
+            },
+
+            // 初始布局（位置完全独立于逻辑和渲染）
+            INITIAL: {
+                friendly: [
+                    { id: "f1", type: "knight", row: 1, col: 2 },
+                    { id: "f2", type: "archer", row: 1, col: 5 }
+                ],
+                enemy: [
+                    { id: "e1", type: "heavy", row: 8, col: 7 },
+                    { id: "e2", type: "mage", row: 8, col: 3 }
+                ],
+                terrain: [
+                    { id: "t1", type: "mountain", row: 3, col: 8 },
+                    { id: "t2", type: "mountain", row: 4, col: 9 },
+                    { id: "t3", type: "river", row: 5, col: 1 },
+                    { id: "t4", type: "river", row: 6, col: 2 },
+                    { id: "t5", type: "forest", row: 2, col: 7 },
+                    { id: "t6", type: "forest", row: 7, col: 4 },
+                    { id: "t7", type: "forest", row: 8, col: 5 }
+                ]
+            },
+
+            BOARD_SIZE: 10
         };
 
+        /**
+         * ====================== 状态模块（STATE）======================
+         * 全局游戏状态，渲染和逻辑都只读/写这里
+         */
         let STATE = {
             friendlyUnits: [],
             enemyUnits: [],
@@ -240,6 +276,10 @@
             selected: null
         };
 
+        /**
+         * ====================== 辅助函数 ======================
+         * 纯工具函数，不含业务逻辑
+         */
         function addLog(message, color = "slate") {
             const container = document.getElementById("log-container");
             const div = document.createElement("div");
@@ -255,96 +295,82 @@
             return STATE[team + "Units"].find(u => u.id === id);
         }
 
-        function calculateReachable(startRow, startCol, maxMove, unit) {
-            const directions = [[-1,0],[1,0],[0,-1],[0,1]];
-            const distMap = {};
-            const queue = [{r: startRow, c: startCol, dist: 0}];
-            const visited = new Set();
-            visited.add(`${startRow},${startCol}`);
-            distMap[`${startRow},${startCol}`] = 0;
+        /**
+         * 创建战斗单位（从配置读取默认属性）
+         * 解耦：新增单位属性时只需要修改 GAME_CONFIG.UNIT_TYPES，这里自动继承
+         */
+        function createCombatUnit(base, team) {
+            const config = GAME_CONFIG.UNIT_TYPES[base.type];
+            return {
+                id: base.id,
+                type: base.type,
+                row: base.row,
+                col: base.col,
+                hp: config.hp,
+                maxHp: config.hp,
+                remainingMove: config.moveRange,
+                hasAttacked: false,
+                forestModifier: false
+            };
+        }
 
-            let effectiveMax = maxMove;
-            if (unit && unit.forestModifier) effectiveMax = Math.max(0, maxMove - 1);
-
-            while (queue.length > 0) {
-                const {r, c, dist} = queue.shift();
-                if (dist >= effectiveMax) continue;
-                for (let [dr, dc] of directions) {
-                    const nr = r + dr, nc = c + dc;
-                    if (nr < 0 || nr > 9 || nc < 0 || nc > 9) continue;
-                    const key = `${nr},${nc}`;
-                    if (visited.has(key)) continue;
-
-                    let blocked = false;
-                    [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
-                        if (u.hp > 0 && u.row === nr && u.col === nc) blocked = true;
-                    });
-                    const terrain = STATE.terrainUnits.find(t => t.row === nr && t.col === nc);
-                    if (terrain && UNIT_TYPES[terrain.type].impassable) blocked = true;
-
-                    if (!blocked) {
-                        visited.add(key);
-                        const newDist = dist + 1;
-                        distMap[key] = newDist;
-                        queue.push({r: nr, c: nc, dist: newDist});
+        /**
+         * ====================== 棋盘渲染模块 ======================
+         * 完全解耦：只负责根据 STATE + GAME_CONFIG 渲染界面，不含任何操作逻辑
+         * 支持战斗单位与地形单位同时显示 emoji
+         */
+        function getCellContent(row, col) {
+            // 返回原始对象引用（便于后续逻辑修改状态）
+            let combatUnit = null;
+            let combatTeam = null;
+            for (let u of STATE.friendlyUnits) {
+                if (u.hp > 0 && u.row === row && u.col === col) {
+                    combatUnit = u;
+                    combatTeam = "friendly";
+                    break;
+                }
+            }
+            if (!combatUnit) {
+                for (let u of STATE.enemyUnits) {
+                    if (u.hp > 0 && u.row === row && u.col === col) {
+                        combatUnit = u;
+                        combatTeam = "enemy";
+                        break;
                     }
                 }
             }
-            return distMap;
-        }
-
-        function applyTerrainEffect(unit) {
-            const terrain = STATE.terrainUnits.find(t => t.row === unit.row && t.col === unit.col);
-            unit.forestModifier = false;
-            if (!terrain) return;
-            const tConfig = UNIT_TYPES[terrain.type];
-            if (terrain.type === "river") {
-                unit.remainingMove = Math.min(unit.remainingMove, 1);
-                addLog(`进入🌊河流，剩余移动限制为 <span class="font-mono">1</span> 格`, "amber");
-            } else if (terrain.type === "forest") {
-                unit.forestModifier = true;
-                if (unit.remainingMove > 0) unit.remainingMove = Math.max(0, unit.remainingMove - 1);
-                addLog(`进入🌲森林，移动与攻击范围 -1`, "amber");
-            }
+            const terrainUnit = STATE.terrainUnits.find(t => t.row === row && t.col === col);
+            return { combatUnit, combatTeam, terrainUnit };
         }
 
         function renderBoard() {
             const boardEl = document.getElementById("board");
             boardEl.innerHTML = "";
 
-            for (let r = 0; r < 10; r++) {
-                for (let c = 0; c < 10; c++) {
+            for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
+                for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
                     const cell = document.createElement("div");
                     cell.className = `grid-cell unit-cell w-[62px] h-[62px] bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
                     cell.dataset.row = r;
                     cell.dataset.col = c;
 
-                    let combatHere = null;
-                    for (let u of STATE.friendlyUnits) {
-                        if (u.hp > 0 && u.row === r && u.col === c) { combatHere = {...u, team: "friendly"}; break; }
-                    }
-                    if (!combatHere) {
-                        for (let u of STATE.enemyUnits) {
-                            if (u.hp > 0 && u.row === r && u.col === c) { combatHere = {...u, team: "enemy"}; break; }
-                        }
-                    }
-                    const terrainHere = STATE.terrainUnits.find(t => t.row === r && t.col === c);
+                    const { combatUnit, combatTeam, terrainUnit } = getCellContent(r, c);
 
-                    if (combatHere) {
-                        cell.setAttribute("data-unit", UNIT_TYPES[combatHere.type].emoji);
-                        cell.style.background = combatHere.team === "friendly" ? "rgba(16, 185, 129, 0.18)" : "rgba(239, 68, 68, 0.18)";
+                    // 设置 emoji（支持重叠）
+                    if (combatUnit) {
+                        cell.setAttribute("data-combat", GAME_CONFIG.UNIT_TYPES[combatUnit.type].emoji);
+                        cell.style.background = combatTeam === "friendly" 
+                            ? "rgba(16, 185, 129, 0.18)" 
+                            : "rgba(239, 68, 68, 0.18)";
                     }
-                    if (terrainHere) {
-                        const tc = UNIT_TYPES[terrainHere.type];
-                        const terrainSpan = document.createElement("span");
-                        terrainSpan.className = "terrain-overlay";
-                        terrainSpan.setAttribute("data-terrain", tc.emoji);
-                        //cell.appendChild(terrainSpan);
-                        cell.setAttribute("data-unit", tc.emoji);
-                        if (!combatHere) {
-                            if (terrainHere.type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
-                            else if (terrainHere.type === "river") cell.style.background = "rgba(56, 189, 248, 0.28)";
-                            else if (terrainHere.type === "forest") cell.style.background = "rgba(134, 239, 172, 0.28)";
+                    if (terrainUnit) {
+                        cell.setAttribute("data-terrain", GAME_CONFIG.UNIT_TYPES[terrainUnit.type].emoji);
+                        // 只有没有战斗单位时才使用地形背景
+                        if (!combatUnit) {
+                            const type = terrainUnit.type;
+                            if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
+                            else if (type === "river") cell.style.background = "rgba(56, 189, 248, 0.28)";
+                            else if (type === "forest") cell.style.background = "rgba(134, 239, 172, 0.28)";
                         }
                     }
 
@@ -362,19 +388,16 @@
             if (!sel) return;
 
             const entity = getUnit(sel.team, sel.id);
-            if (!entity) return;
+            if (!entity || sel.team === "terrain") return;
 
-            if (sel.team === "terrain") return;   // 地形不显示任何范围
+            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
 
-            const config = UNIT_TYPES[entity.type];
-
-            // 移动距离 ≤0 时不显示移动范围
+            // 移动范围
             let maxMove = (sel.team === "friendly") ? entity.remainingMove : config.moveRange;
             if (maxMove <= 0) maxMove = 0;
-
             const reachable = calculateReachable(entity.row, entity.col, maxMove, entity);
 
-            // 攻击距离 ≤0 时不显示攻击范围
+            // 攻击范围
             let effectiveAtk = entity.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
             if (effectiveAtk <= 0) effectiveAtk = 0;
 
@@ -389,7 +412,7 @@
                 const isMove = (maxMove > 0 && dist !== undefined && dist > 0);
                 const manhattan = Math.abs(r - entity.row) + Math.abs(c - entity.col);
 
-                // 森林防御特性：外部单位只能相邻格攻击森林内单位
+                // 森林防御特性
                 let canAttack = (effectiveAtk > 0 && manhattan <= effectiveAtk);
                 const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
                 if (targetTerrain && targetTerrain.type === "forest") {
@@ -397,7 +420,7 @@
                 }
 
                 if (isMove && canAttack) {
-                    cell.classList.add("highlight-overlap");   // 重合时闪烁
+                    cell.classList.add("highlight-overlap");
                 } else if (isMove) {
                     cell.classList.add("highlight-move");
                 } else if (canAttack) {
@@ -406,118 +429,123 @@
             });
         }
 
-        function handleCellClick(row, col) {
-            if (STATE.currentTurn !== "player") return;
+        /**
+         * ====================== 操作逻辑模块 ======================
+         * 完全解耦：所有点击、移动、攻击逻辑都提取成独立函数
+         * 方便后续新增规则（例如新增技能、特殊移动等）
+         */
+        function calculateReachable(startRow, startCol, maxMove, unit) {
+            const directions = [[-1,0],[1,0],[0,-1],[0,1]];
+            const distMap = {};
+            const queue = [{r: startRow, c: startCol, dist: 0}];
+            const visited = new Set();
+            visited.add(`${startRow},${startCol}`);
+            distMap[`${startRow},${startCol}`] = 0;
 
-            let combatHere = null, combatTeam = null;
-            for (let u of STATE.friendlyUnits) {
-                if (u.hp > 0 && u.row === row && u.col === col) { combatHere = u; combatTeam = "friendly"; break; }
-            }
-            if (!combatHere) {
-                for (let u of STATE.enemyUnits) {
-                    if (u.hp > 0 && u.row === row && u.col === col) { combatHere = u; combatTeam = "enemy"; break; }
-                }
-            }
-            const terrainHere = STATE.terrainUnits.find(t => t.row === row && t.col === col);
+            let effectiveMax = maxMove;
+            if (unit && unit.forestModifier) effectiveMax = Math.max(0, maxMove - 1);
 
-            const sel = STATE.selected;
+            while (queue.length > 0) {
+                const {r, c, dist} = queue.shift();
+                if (dist >= effectiveMax) continue;
+                for (let [dr, dc] of directions) {
+                    const nr = r + dr, nc = c + dc;
+                    if (nr < 0 || nr >= GAME_CONFIG.BOARD_SIZE || nc < 0 || nc >= GAME_CONFIG.BOARD_SIZE) continue;
+                    const key = `${nr},${nc}`;
+                    if (visited.has(key)) continue;
 
-            if (combatHere) {
-                if (sel && sel.team === combatTeam && sel.id === combatHere.id) {
-                    deselectUnit();
-                    return;
-                }
-                if (sel && sel.team === "friendly" && combatTeam === "enemy") {
-                    const actor = getUnit("friendly", sel.id);
-                    if (actor && !actor.hasAttacked) {
-                        const manhattan = Math.abs(actor.row - row) + Math.abs(actor.col - col);
-                        let effectiveAtk = actor.forestModifier ? Math.max(1, UNIT_TYPES[actor.type].atkRange - 1) : UNIT_TYPES[actor.type].atkRange;
-                        const targetTerrain = STATE.terrainUnits.find(t => t.row === row && t.col === col);
-                        if (targetTerrain && targetTerrain.type === "forest") effectiveAtk = 1;   // 森林防御特性
-                        if (manhattan <= effectiveAtk) {
-                            performAttack(actor, combatHere);
-                            actor.hasAttacked = true;
-                            renderBoard();
-                            updateSelectedPanel();
-                            updateAllLists();
-                            checkGameOver();
-                            return;
-                        }
-                    }
-                }
-                STATE.selected = { team: combatTeam, id: combatHere.id };
-                addLog(`选中 ${combatTeam === "friendly" ? "友方" : "敌方"} <span class="text-${combatTeam === "friendly" ? "emerald" : "rose"}-400">${UNIT_TYPES[combatHere.type].emoji} ${UNIT_TYPES[combatHere.type].name}</span>`, combatTeam === "friendly" ? "emerald" : "rose");
-                renderBoard();
-                updateSelectedPanel();
-                return;
-            }
+                    let blocked = false;
+                    [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
+                        if (u.hp > 0 && u.row === nr && u.col === nc) blocked = true;
+                    });
+                    const terrain = STATE.terrainUnits.find(t => t.row === nr && t.col === nc);
+                    if (terrain && GAME_CONFIG.UNIT_TYPES[terrain.type].impassable) blocked = true;
 
-            if (terrainHere) {
-                if (sel && sel.team === "friendly") {
-                    const unit = getUnit("friendly", sel.id);
-                    if (unit && unit.remainingMove > 0) {
-                        const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove, unit);
-                        const key = `${row},${col}`;
-                        const dist = reachable[key];
-                        if (dist !== undefined && dist > 0) {
-                            const tConfig = UNIT_TYPES[terrainHere.type];
-                            if (!tConfig.impassable) {
-                                unit.row = row;
-                                unit.col = col;
-                                unit.remainingMove -= dist;
-                                addLog(`移动 <span class="font-mono">${dist}</span> 格到地形（剩余 <span class="font-mono">${unit.remainingMove}</span>）`, "emerald");
-                                applyTerrainEffect(unit);
-                                renderBoard();
-                                updateSelectedPanel();
-                                return;
-                            }
-                        }
-                    }
-                }
-                if (sel && sel.team === "terrain" && sel.id === terrainHere.id) {
-                    deselectUnit();
-                    return;
-                }
-                STATE.selected = { team: "terrain", id: terrainHere.id };
-                addLog(`查看地形 <span class="text-slate-400">${UNIT_TYPES[terrainHere.type].emoji} ${UNIT_TYPES[terrainHere.type].name}</span>`, "slate");
-                renderBoard();
-                updateSelectedPanel();
-                return;
-            }
-
-            if (sel && sel.team === "friendly") {
-                const unit = getUnit("friendly", sel.id);
-                if (unit && unit.remainingMove > 0) {
-                    const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove, unit);
-                    const key = `${row},${col}`;
-                    const dist = reachable[key];
-                    if (dist !== undefined && dist > 0) {
-                        unit.row = row;
-                        unit.col = col;
-                        unit.remainingMove -= dist;
-                        addLog(`移动 <span class="font-mono">${dist}</span> 格（剩余 <span class="font-mono">${unit.remainingMove}</span>）`, "emerald");
-                        applyTerrainEffect(unit);
-                        renderBoard();
-                        updateSelectedPanel();
-                        return;
+                    if (!blocked) {
+                        visited.add(key);
+                        const newDist = dist + 1;
+                        distMap[key] = newDist;
+                        queue.push({r: nr, c: nc, dist: newDist});
                     }
                 }
             }
-
-            deselectUnit();
+            return distMap;
         }
 
+        function applyTerrainEffect(unit) {
+            const terrain = STATE.terrainUnits.find(t => t.row === unit.row && t.col === unit.col);
+            unit.forestModifier = false;
+            if (!terrain) return;
+            const tConfig = GAME_CONFIG.UNIT_TYPES[terrain.type];
+            if (terrain.type === "river") {
+                unit.remainingMove = Math.min(unit.remainingMove, 1);
+                addLog(`进入🌊河流，剩余移动限制为 <span class="font-mono">1</span> 格`, "amber");
+            } else if (terrain.type === "forest") {
+                unit.forestModifier = true;
+                if (unit.remainingMove > 0) unit.remainingMove = Math.max(0, unit.remainingMove - 1);
+                addLog(`进入🌲森林，移动与攻击范围 -1`, "amber");
+            }
+        }
+
+        // 尝试移动（统一处理空地和可进入地形）
+        function attemptPlayerMove(unit, targetRow, targetCol) {
+            if (unit.remainingMove <= 0) return false;
+            const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove, unit);
+            const key = `${targetRow},${targetCol}`;
+            const dist = reachable[key];
+            if (dist === undefined || dist <= 0) return false;
+
+            unit.row = targetRow;
+            unit.col = targetCol;
+            unit.remainingMove -= dist;
+            addLog(`移动 <span class="font-mono">${dist}</span> 格（剩余 <span class="font-mono">${unit.remainingMove}</span>）`, "emerald");
+            applyTerrainEffect(unit);
+            return true;
+        }
+
+        // 判断是否可攻击（包含森林防御特性）
+        function canAttack(attacker, targetRow, targetCol) {
+            const config = GAME_CONFIG.UNIT_TYPES[attacker.type];
+            let effectiveAtk = attacker.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
+            if (effectiveAtk <= 0) return false;
+
+            const manhattan = Math.abs(attacker.row - targetRow) + Math.abs(attacker.col - targetCol);
+            const targetTerrain = STATE.terrainUnits.find(t => t.row === targetRow && t.col === targetCol);
+            if (targetTerrain && targetTerrain.type === "forest") {
+                return manhattan <= 1;
+            }
+            return manhattan <= effectiveAtk;
+        }
+
+        // 执行攻击
         function performAttack(attacker, defender) {
-            const aConfig = UNIT_TYPES[attacker.type];
-            const dConfig = UNIT_TYPES[defender.type];
+            const aConfig = GAME_CONFIG.UNIT_TYPES[attacker.type];
+            const dConfig = GAME_CONFIG.UNIT_TYPES[defender.type];
             let damage = Math.max(1, aConfig.atk - dConfig.def);
             defender.hp = Math.max(0, defender.hp - damage);
 
             const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
             addLog(`<span class="text-${attackerColor}-400">${aConfig.emoji}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
+        }
 
+        // 尝试玩家攻击
+        function attemptPlayerAttack(attacker, defender) {
+            if (attacker.hasAttacked) return false;
+            if (!canAttack(attacker, defender.row, defender.col)) return false;
+
+            performAttack(attacker, defender);
+            attacker.hasAttacked = true;
+            return true;
+        }
+
+        function selectUnit(team, id) {
+            STATE.selected = { team, id };
+            const entity = getUnit(team, id);
+            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
+            const teamText = team === "friendly" ? "友方" : (team === "enemy" ? "敌方" : "地形");
+            addLog(`选中 ${teamText} <span class="text-${team === "friendly" ? "emerald" : team === "enemy" ? "rose" : "slate"}-400">${config.emoji} ${config.name}</span>`, team === "friendly" ? "emerald" : team === "enemy" ? "rose" : "slate");
             renderBoard();
-            updateAllLists();
+            updateSelectedPanel();
         }
 
         function deselectUnit() {
@@ -526,54 +554,141 @@
             updateSelectedPanel();
         }
 
+        // 主点击处理（已完全解耦为多个小函数）
+        function handleCellClick(row, col) {
+            if (STATE.currentTurn !== "player") return;
+
+            const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
+            const sel = STATE.selected;
+
+            // 1. 点击战斗单位
+            if (combatUnit) {
+                if (sel && sel.team === combatTeam && sel.id === combatUnit.id) {
+                    deselectUnit();
+                    return;
+                }
+                // 友方选中敌方 → 尝试攻击
+                if (sel && sel.team === "friendly" && combatTeam === "enemy") {
+                    const actor = getUnit("friendly", sel.id);
+                    if (actor && attemptPlayerAttack(actor, combatUnit)) {
+                        renderBoard();
+                        updateSelectedPanel();
+                        updateAllLists();
+                        checkGameOver();
+                        return;
+                    }
+                }
+                // 否则选中该单位
+                selectUnit(combatTeam, combatUnit.id);
+                return;
+            }
+
+            // 2. 点击地形或空地（尝试移动）
+            if (sel && sel.team === "friendly") {
+                const unit = getUnit("friendly", sel.id);
+                if (unit && attemptPlayerMove(unit, row, col)) {
+                    renderBoard();
+                    updateSelectedPanel();
+                    return;
+                }
+            }
+
+            // 3. 未移动成功 → 处理地形选中 / 取消选中
+            if (terrainUnit) {
+                if (sel && sel.team === "terrain" && sel.id === terrainUnit.id) {
+                    deselectUnit();
+                    return;
+                }
+                selectUnit("terrain", terrainUnit.id);
+                return;
+            }
+
+            deselectUnit();
+        }
+
+        /**
+         * ====================== 敌方AI与回合控制 ======================
+         */
         function enemyTurn() {
             STATE.currentTurn = "enemy";
             updateUI();
             addLog("🔴 敌方回合开始...", "rose");
             let index = 0;
+
             const actNextEnemy = () => {
-                if (index >= STATE.enemyUnits.length) { finishEnemyTurn(); return; }
+                if (index >= STATE.enemyUnits.length) {
+                    finishEnemyTurn();
+                    return;
+                }
                 const enemy = STATE.enemyUnits[index];
-                if (enemy.hp <= 0) { index++; actNextEnemy(); return; }
+                if (enemy.hp <= 0) {
+                    index++;
+                    actNextEnemy();
+                    return;
+                }
+
                 let closest = null, minDist = Infinity;
                 STATE.friendlyUnits.forEach(f => {
                     if (f.hp > 0) {
                         const dist = Math.abs(f.row - enemy.row) + Math.abs(f.col - enemy.col);
-                        if (dist < minDist) { minDist = dist; closest = f; }
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closest = f;
+                        }
                     }
                 });
-                if (!closest) { index++; actNextEnemy(); return; }
-                const config = UNIT_TYPES[enemy.type];
+                if (!closest) {
+                    index++;
+                    actNextEnemy();
+                    return;
+                }
+
+                const config = GAME_CONFIG.UNIT_TYPES[enemy.type];
                 let bestR = enemy.row, bestC = enemy.col, bestDist = Infinity;
+
                 for (let dr = -config.moveRange; dr <= config.moveRange; dr++) {
                     for (let dc = -config.moveRange; dc <= config.moveRange; dc++) {
                         const nr = enemy.row + dr, nc = enemy.col + dc;
-                        if (nr < 0 || nr > 9 || nc < 0 || nc > 9) continue;
+                        if (nr < 0 || nr >= GAME_CONFIG.BOARD_SIZE || nc < 0 || nc >= GAME_CONFIG.BOARD_SIZE) continue;
                         const terrain = STATE.terrainUnits.find(t => t.row === nr && t.col === nc);
-                        if (terrain && UNIT_TYPES[terrain.type].impassable) continue;
+                        if (terrain && GAME_CONFIG.UNIT_TYPES[terrain.type].impassable) continue;
+
                         let occupied = false;
                         [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
                             if (u.hp > 0 && u.row === nr && u.col === nc) occupied = true;
                         });
                         if (occupied) continue;
+
                         const newDist = Math.abs(nr - closest.row) + Math.abs(nc - closest.col);
-                        if (newDist < bestDist) { bestDist = newDist; bestR = nr; bestC = nc; }
+                        if (newDist < bestDist) {
+                            bestDist = newDist;
+                            bestR = nr;
+                            bestC = nc;
+                        }
                     }
                 }
-                enemy.row = bestR; enemy.col = bestC;
+
+                enemy.row = bestR;
+                enemy.col = bestC;
                 addLog(`<span class="text-rose-400">${config.emoji} ${config.name}</span> 移动到 (${bestR},${bestC})`, "rose");
                 renderBoard();
+
                 const afterDist = Math.abs(bestR - closest.row) + Math.abs(bestC - closest.col);
                 if (afterDist <= config.atkRange) {
                     setTimeout(() => {
                         performAttack(enemy, closest);
-                        renderBoard(); updateAllLists(); checkGameOver();
-                        index++; setTimeout(actNextEnemy, 700);
+                        renderBoard();
+                        updateAllLists();
+                        checkGameOver();
+                        index++;
+                        setTimeout(actNextEnemy, 700);
                     }, 650);
                 } else {
-                    index++; setTimeout(actNextEnemy, 700);
+                    index++;
+                    setTimeout(actNextEnemy, 700);
                 }
             };
+
             setTimeout(actNextEnemy, 800);
         }
 
@@ -582,7 +697,7 @@
             STATE.turnCount++;
             STATE.friendlyUnits.forEach(u => {
                 if (u.hp > 0) {
-                    const config = UNIT_TYPES[u.type];
+                    const config = GAME_CONFIG.UNIT_TYPES[u.type];
                     u.remainingMove = config.moveRange;
                     u.hasAttacked = false;
                     u.forestModifier = false;
@@ -600,14 +715,23 @@
             enemyTurn();
         }
 
+        /**
+         * ====================== UI 更新模块 ======================
+         */
         function updateSelectedPanel() {
             const panel = document.getElementById("selected-panel");
-            if (!STATE.selected) { panel.classList.add("hidden"); return; }
+            if (!STATE.selected) {
+                panel.classList.add("hidden");
+                return;
+            }
 
             const entity = getUnit(STATE.selected.team, STATE.selected.id);
-            if (!entity) { panel.classList.add("hidden"); return; }
+            if (!entity) {
+                panel.classList.add("hidden");
+                return;
+            }
 
-            const config = UNIT_TYPES[entity.type];
+            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             const isTerrain = STATE.selected.team === "terrain";
 
             document.getElementById("selected-emoji").innerHTML = config.emoji;
@@ -647,7 +771,7 @@
             fList.innerHTML = "";
             STATE.friendlyUnits.forEach(u => {
                 if (u.hp <= 0) return;
-                const config = UNIT_TYPES[u.type];
+                const config = GAME_CONFIG.UNIT_TYPES[u.type];
                 const percent = Math.round((u.hp / u.maxHp) * 100);
                 const div = document.createElement("div");
                 div.className = "flex items-center gap-3 bg-emerald-900/30 px-3 py-2 rounded-2xl text-xs";
@@ -659,7 +783,7 @@
             eList.innerHTML = "";
             STATE.enemyUnits.forEach(u => {
                 if (u.hp <= 0) return;
-                const config = UNIT_TYPES[u.type];
+                const config = GAME_CONFIG.UNIT_TYPES[u.type];
                 const percent = Math.round((u.hp / u.maxHp) * 100);
                 const div = document.createElement("div");
                 div.className = "flex items-center gap-3 bg-rose-900/30 px-3 py-2 rounded-2xl text-xs";
@@ -703,24 +827,14 @@
             document.getElementById("result-modal").classList.add("hidden");
         }
 
+        /**
+         * ====================== 重置游戏 ======================
+         * 使用 GAME_CONFIG 初始化，完全解耦
+         */
         function resetGame() {
-            STATE.friendlyUnits = [
-                { id: "f1", type: "knight", row: 1, col: 2, hp: 22, maxHp: 22, remainingMove: 4, hasAttacked: false, forestModifier: false },
-                { id: "f2", type: "archer", row: 1, col: 5, hp: 16, maxHp: 16, remainingMove: 3, hasAttacked: false, forestModifier: false }
-            ];
-            STATE.enemyUnits = [
-                { id: "e1", type: "heavy", row: 8, col: 7, hp: 28, maxHp: 28, remainingMove: 2, hasAttacked: false, forestModifier: false },
-                { id: "e2", type: "mage", row: 8, col: 3, hp: 15, maxHp: 15, remainingMove: 3, hasAttacked: false, forestModifier: false }
-            ];
-            STATE.terrainUnits = [
-                { id: "t1", type: "mountain", row: 3, col: 8 },
-                { id: "t2", type: "mountain", row: 4, col: 9 },
-                { id: "t3", type: "river", row: 5, col: 1 },
-                { id: "t4", type: "river", row: 6, col: 2 },
-                { id: "t5", type: "forest", row: 2, col: 7 },
-                { id: "t6", type: "forest", row: 7, col: 4 },
-                { id: "t7", type: "forest", row: 8, col: 5 }
-            ];
+            STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(base => createCombatUnit(base, "friendly"));
+            STATE.enemyUnits = GAME_CONFIG.INITIAL.enemy.map(base => createCombatUnit(base, "enemy"));
+            STATE.terrainUnits = GAME_CONFIG.INITIAL.terrain.map(base => ({ ...base }));
 
             STATE.currentTurn = "player";
             STATE.turnCount = 1;
