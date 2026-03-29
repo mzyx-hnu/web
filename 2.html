@@ -50,10 +50,16 @@
             background: rgba(16, 185, 129, 0.45) !important;
             animation: overlapFlicker 1s infinite alternate ease-in-out;
         }
+        /* 新增：编辑模式选中高亮（紫色脉冲） */
+        .highlight-edit {
+            box-shadow: 0 0 0 8px rgb(168 85 247) inset !important;
+            animation: editPulse 1.5s infinite;
+        }
         @keyframes overlapFlicker {
             0%   { background: rgba(16, 185, 129, 0.45) !important; box-shadow: 0 0 0 4px rgb(16 185 129) inset; }
             100% { background: rgba(239, 68, 68, 0.68) !important; box-shadow: 0 0 0 6px rgb(239 68 68) inset; }
         }
+        @keyframes editPulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
 
         .unit-cell::before {
             content: attr(data-combat);
@@ -82,7 +88,6 @@
 
         .turn-indicator { animation: pulse-turn 2s infinite; }
 
-        /* 编辑器专用样式 */
         .editor-input {
             background: rgba(15, 23, 42, 0.6);
             border: 1px solid rgba(255,255,255,0.1);
@@ -95,6 +100,7 @@
 
     <div id="game-container" class="relative z-10 w-full max-w-6xl glass-panel rounded-3xl overflow-hidden flex flex-col shadow-2xl min-h-[720px] transition-opacity duration-500 border-t border-white/10">
         
+        <!-- 顶部标题栏 -->
         <div class="px-8 py-5 border-b border-white/10 flex justify-between items-center bg-slate-900/60">
             <div class="flex items-center gap-x-3">
                 <div class="text-4xl">🏰</div>
@@ -111,7 +117,7 @@
                     <span id="turn-team" class="turn-indicator">🟦 玩家回合</span>
                     <span id="turn-number" class="font-mono text-xl text-white">01</span>
                 </div>
-                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击/技能1次 • 敌方技能可选中预览 • 完整单位编辑器</div>
+                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击/技能1次 • 敌方技能可选中预览 • 完整独立单位编辑器</div>
             </div>
 
             <button onclick="endPlayerTurn()" 
@@ -122,9 +128,11 @@
             </button>
         </div>
 
-        <div class="flex flex-1 p-8 gap-8">
+        <!-- 新布局：左侧板块 → 上方，右侧板块 → 下方，棋盘居中 -->
+        <div class="flex flex-col flex-1 p-8 gap-8">
             
-            <div class="w-72 glass-panel rounded-3xl p-5 flex flex-col text-xs space-y-4">
+            <!-- 上方：原左侧板块（规则 + 单位列表 + YAML + 编辑按钮） -->
+            <div class="w-full max-w-[280px] mx-auto glass-panel rounded-3xl p-5 flex flex-col text-xs space-y-4">
                 <div class="font-bold text-emerald-400 uppercase tracking-widest text-center mb-2">游戏规则（地形版）</div>
                 <div class="text-slate-300 leading-relaxed space-y-3 text-[13px]">
                     <p>1. 点击任意单位/地形查看属性与范围</p>
@@ -149,7 +157,7 @@
                     <div id="enemy-list" class="space-y-2"></div>
                 </div>
 
-                <!-- YAML 存档系统（保持不变） -->
+                <!-- YAML 存档系统 -->
                 <div class="mt-auto pt-6 border-t border-white/20">
                     <div class="text-emerald-400 text-[10px] font-bold uppercase mb-3">棋盘存档系统</div>
                     <button onclick="exportBoard()" 
@@ -164,7 +172,7 @@
                     <div class="text-[10px] text-slate-400 mt-2 text-center">支持新增单位/技能/地形</div>
                 </div>
 
-                <!-- 新增：编辑器入口 -->
+                <!-- 编辑器入口 -->
                 <button onclick="toggleEditMode()" 
                         id="edit-mode-btn"
                         class="mt-3 w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg transition-all">
@@ -177,6 +185,7 @@
                 </div>
             </div>
 
+            <!-- 棋盘（居中） -->
             <div class="flex-1 flex items-center justify-center">
                 <div id="board" 
                      class="grid grid-cols-10 gap-px bg-slate-700/80 p-3 rounded-3xl shadow-2xl border border-white/10"
@@ -184,8 +193,9 @@
                 </div>
             </div>
 
-            <div class="w-80 glass-panel rounded-3xl p-5 flex flex-col">
-                <!-- 普通选中面板（保持不变，但技能面板已支持敌方预览） -->
+            <!-- 下方：原右侧板块（选中面板 + 编辑器 + 日志） -->
+            <div class="w-full max-w-md mx-auto glass-panel rounded-3xl p-5 flex flex-col">
+                <!-- 普通选中面板 -->
                 <div id="selected-panel" class="hidden mb-5">
                     <div class="flex items-center gap-3 mb-3">
                         <div id="selected-emoji" class="text-5xl"></div>
@@ -238,7 +248,7 @@
                     </div>
                 </div>
 
-                <!-- 新增：编辑器面板（仅在编辑模式显示） -->
+                <!-- 编辑器面板 -->
                 <div id="editor-panel" class="hidden flex-1 flex flex-col">
                     <div class="flex items-center justify-between mb-4">
                         <div class="text-purple-400 font-bold text-lg flex items-center gap-2">
@@ -262,6 +272,7 @@
                     </div>
                 </div>
 
+                <!-- 日志区域 -->
                 <div class="flex-1 flex flex-col">
                     <div class="text-xs font-bold uppercase tracking-widest text-rose-300 mb-3">战斗日志</div>
                     <div id="log-container" class="flex-1 overflow-y-auto text-xs text-slate-300 space-y-2 custom-scroll pr-2"></div>
@@ -269,7 +280,7 @@
                 
                 <div class="text-[10px] text-slate-400 mt-4 pt-4 border-t border-white/10">
                     当前回合：<span id="log-turn" class="font-mono">1</span><br>
-                    敌方技能可选中并显示范围
+                    编辑模式下选中单位会高亮 • 单位已完全独立
                 </div>
             </div>
         </div>
@@ -291,7 +302,7 @@
     <script>
         /**
          * ====================== 配置模块（GAME_CONFIG）======================
-         * 完全解耦：所有单位、技能、地形定义均在此处，编辑器会动态修改此对象
+         * 只作为模板使用。所有单位/地形在创建时会深度复制模板数据，实现完全独立编辑
          */
         const GAME_CONFIG = {
             UNIT_TYPES: {
@@ -315,14 +326,8 @@
             },
 
             INITIAL: {
-                friendly: [
-                    { id: "f1", type: "knight", row: 1, col: 2 },
-                    { id: "f2", type: "archer", row: 1, col: 5 }
-                ],
-                enemy: [
-                    { id: "e1", type: "heavy", row: 8, col: 7 },
-                    { id: "e2", type: "mage", row: 8, col: 3 }
-                ],
+                friendly: [{ id: "f1", type: "knight", row: 1, col: 2 }, { id: "f2", type: "archer", row: 1, col: 5 }],
+                enemy: [{ id: "e1", type: "heavy", row: 8, col: 7 }, { id: "e2", type: "mage", row: 8, col: 3 }],
                 terrain: [
                     { id: "t1", type: "mountain", row: 3, col: 8 },
                     { id: "t2", type: "mountain", row: 4, col: 9 },
@@ -345,11 +350,12 @@
             turnCount: 1,
             selected: null,
             selectedSkill: null,
-            editMode: false,           // 新增：编辑模式状态
-            editingUnit: null          // 当前正在编辑的单位 {team, id}
+            editMode: false,
+            editingUnit: null,          // {team, id, isTerrain}
+            previewTimeout: null        // 用于技能预览防中断
         };
 
-        /* ====================== 辅助函数（保持不变） ====================== */
+        /* ====================== 辅助函数 ====================== */
         function addLog(message, color = "slate") {
             const container = document.getElementById("log-container");
             const div = document.createElement("div");
@@ -365,20 +371,32 @@
             return STATE[team + "Units"].find(u => u.id === id);
         }
 
+        /**
+         * 关键解耦：创建单位时深度复制模板，所有后续修改只影响该单位实例
+         */
         function createCombatUnit(base) {
-            const config = GAME_CONFIG.UNIT_TYPES[base.type];
+            const template = GAME_CONFIG.UNIT_TYPES[base.type];
             return {
                 id: base.id,
                 type: base.type,
                 row: base.row,
                 col: base.col,
-                hp: config.hp,
-                maxHp: config.hp,
-                remainingMove: config.moveRange,
+                emoji: template.emoji,
+                name: template.name,
+                hp: template.hp,
+                maxHp: template.hp,
+                atk: template.atk,
+                def: template.def,
+                moveRange: template.moveRange,
+                atkRange: template.atkRange,
+                mana: template.mana,
+                maxMana: template.mana,
+                currentMana: template.mana,
+                normalSkills: [...(template.normalSkills || [])],
+                ultSkill: template.ultSkill,
+                remainingMove: template.moveRange,
                 hasAttacked: false,
                 forestModifier: false,
-                maxMana: config.mana,
-                currentMana: config.mana,
                 skillUsedThisTurn: false
             };
         }
@@ -393,14 +411,12 @@
         function getCellContent(row, col) {
             let combatUnit = null, combatTeam = null;
             for (let u of STATE.friendlyUnits) if (u.hp > 0 && u.row === row && u.col === col) { combatUnit = u; combatTeam = "friendly"; break; }
-            if (!combatUnit) {
-                for (let u of STATE.enemyUnits) if (u.hp > 0 && u.row === row && u.col === col) { combatUnit = u; combatTeam = "enemy"; break; }
-            }
+            if (!combatUnit) for (let u of STATE.enemyUnits) if (u.hp > 0 && u.row === row && u.col === col) { combatUnit = u; combatTeam = "enemy"; break; }
             const terrainUnit = STATE.terrainUnits.find(t => t.row === row && t.col === col);
             return { combatUnit, combatTeam, terrainUnit };
         }
 
-        /* ====================== 棋盘渲染（保持不变） ====================== */
+        /* ====================== 棋盘渲染（新增编辑模式高亮） ====================== */
         function renderBoard() {
             const boardEl = document.getElementById("board");
             boardEl.innerHTML = "";
@@ -414,17 +430,24 @@
                     const { combatUnit, combatTeam, terrainUnit } = getCellContent(r, c);
 
                     if (combatUnit) {
-                        cell.setAttribute("data-combat", GAME_CONFIG.UNIT_TYPES[combatUnit.type].emoji);
+                        cell.setAttribute("data-combat", combatUnit.emoji);
                         cell.style.background = combatTeam === "friendly" ? "rgba(16, 185, 129, 0.18)" : "rgba(239, 68, 68, 0.18)";
                     }
                     if (terrainUnit) {
-                        cell.setAttribute("data-terrain", GAME_CONFIG.UNIT_TYPES[terrainUnit.type].emoji);
+                        cell.setAttribute("data-terrain", terrainUnit.emoji);
                         if (!combatUnit) {
                             const type = terrainUnit.type;
                             if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
                             else if (type === "river") cell.style.background = "rgba(56, 189, 248, 0.28)";
                             else if (type === "forest") cell.style.background = "rgba(134, 239, 172, 0.28)";
                         }
+                    }
+
+                    // 编辑模式高亮
+                    if (STATE.editMode && STATE.editingUnit) {
+                        const isEditingThis = STATE.editingUnit.team === combatTeam && STATE.editingUnit.id === (combatUnit ? combatUnit.id : null) ||
+                                             (STATE.editingUnit.team === "terrain" && terrainUnit && STATE.editingUnit.id === terrainUnit.id);
+                        if (isEditingThis) cell.classList.add("highlight-edit");
                     }
 
                     cell.addEventListener("click", () => handleCellClick(r, c));
@@ -434,7 +457,7 @@
             if (STATE.selected) highlightRanges();
         }
 
-        /* ====================== 高亮逻辑（保持不变） ====================== */
+        /* ====================== 高亮逻辑 ====================== */
         function highlightRanges() {
             const cells = document.querySelectorAll(".grid-cell");
             const sel = STATE.selected;
@@ -447,7 +470,7 @@
                 return;
             }
 
-            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
+            const config = entity; // 现在使用单位自身数据
             let maxMove = (sel.team === "friendly") ? entity.remainingMove : config.moveRange;
             if (maxMove <= 0) maxMove = 0;
             const reachable = calculateReachable(entity.row, entity.col, maxMove, entity);
@@ -516,7 +539,7 @@
                         if (u.hp > 0 && u.row === nr && u.col === nc) blocked = true;
                     });
                     const terrain = STATE.terrainUnits.find(t => t.row === nr && t.col === nc);
-                    if (terrain && GAME_CONFIG.UNIT_TYPES[terrain.type].impassable) blocked = true;
+                    if (terrain && GAME_CONFIG.UNIT_TYPES[terrain.type] && GAME_CONFIG.UNIT_TYPES[terrain.type].impassable) blocked = true;
 
                     if (!blocked) {
                         visited.add(key);
@@ -529,12 +552,12 @@
             return distMap;
         }
 
-        /* ====================== 地形效果（保持不变） ====================== */
+        /* ====================== 地形效果 ====================== */
         function applyTerrainEffect(unit) {
             const terrainIndex = STATE.terrainUnits.findIndex(t => t.row === unit.row && t.col === unit.col);
             if (terrainIndex === -1) return;
             const terrain = STATE.terrainUnits[terrainIndex];
-            const tConfig = GAME_CONFIG.UNIT_TYPES[terrain.type];
+            const tConfig = terrain; // 现在 terrain 本身就是完整数据
 
             unit.forestModifier = false;
 
@@ -557,7 +580,7 @@
             }
         }
 
-        /* ====================== 操作逻辑（保持不变） ====================== */
+        /* ====================== 操作逻辑 ====================== */
         function attemptPlayerMove(unit, targetRow, targetCol) {
             if (unit.remainingMove <= 0) return false;
             const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove, unit);
@@ -574,22 +597,19 @@
         }
 
         function performAttack(attacker, defender) {
-            const aConfig = GAME_CONFIG.UNIT_TYPES[attacker.type];
-            const dConfig = GAME_CONFIG.UNIT_TYPES[defender.type];
-            let damage = Math.max(1, aConfig.atk - dConfig.def);
+            let damage = Math.max(1, attacker.atk - defender.def);
             defender.hp = Math.max(0, defender.hp - damage);
 
             const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
-            addLog(`<span class="text-${attackerColor}-400">${aConfig.emoji}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
+            addLog(`<span class="text-${attackerColor}-400">${attacker.emoji}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
         }
 
         function performSkill(attacker, skillId, defender) {
             const skill = GAME_CONFIG.SKILLS[skillId];
-            const dConfig = GAME_CONFIG.UNIT_TYPES[defender.type];
-            let damage = Math.max(1, skill.damage - dConfig.def);
+            let damage = Math.max(1, skill.damage - defender.def);
             defender.hp = Math.max(0, defender.hp - damage);
 
-            addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+            addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
         }
 
         function activateSkill(skillId) {
@@ -604,14 +624,12 @@
             updateSelectedPanel();
         }
 
-        /* ====================== 选中逻辑（增强敌方技能预览） ====================== */
         function selectUnit(team, id) {
             STATE.selected = { team, id };
             STATE.selectedSkill = null;
             const entity = getUnit(team, id);
-            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             const teamText = team === "friendly" ? "友方" : (team === "enemy" ? "敌方" : "地形");
-            addLog(`选中 ${teamText} <span class="text-${team === "friendly" ? "emerald" : team === "enemy" ? "rose" : "slate"}-400">${config.emoji} ${config.name}</span>`, team === "friendly" ? "emerald" : team === "enemy" ? "rose" : "slate");
+            addLog(`选中 ${teamText} <span class="text-${team === "friendly" ? "emerald" : team === "enemy" ? "rose" : "slate"}-400">${entity.emoji} ${entity.name}</span>`, team === "friendly" ? "emerald" : team === "enemy" ? "rose" : "slate");
             renderBoard();
             updateSelectedPanel();
         }
@@ -623,7 +641,7 @@
             updateSelectedPanel();
         }
 
-        /* ====================== 主点击处理（新增编辑模式分支） ====================== */
+        /* ====================== 主点击处理（编辑模式优先 + 敌方预览防中断） ====================== */
         function handleCellClick(row, col) {
             if (STATE.editMode) {
                 handleEditClick(row, col);
@@ -665,7 +683,7 @@
                 if (sel && sel.team === "friendly" && combatTeam === "enemy") {
                     const actor = getUnit("friendly", sel.id);
                     if (actor && !actor.hasAttacked) {
-                        const effectiveAtk = actor.forestModifier ? Math.max(1, GAME_CONFIG.UNIT_TYPES[actor.type].atkRange - 1) : GAME_CONFIG.UNIT_TYPES[actor.type].atkRange;
+                        const effectiveAtk = actor.forestModifier ? Math.max(1, actor.atkRange - 1) : actor.atkRange;
                         if (isInRange(actor, row, col, effectiveAtk)) {
                             performAttack(actor, combatUnit);
                             actor.hasAttacked = true;
@@ -699,9 +717,7 @@
             deselectUnit();
         }
 
-        /* ====================== 编辑模式核心逻辑 ====================== */
-        let editMode = false; // 同步 STATE.editMode
-
+        /* ====================== 编辑模式（新增选中高亮 + 独立单位） ====================== */
         function toggleEditMode() {
             STATE.editMode = !STATE.editMode;
             const btn = document.getElementById("edit-mode-btn");
@@ -712,11 +728,11 @@
                 icon.textContent = "✕";
                 text.textContent = "退出编辑模式";
                 btn.classList.add("ring-2", "ring-purple-400");
-                deselectUnit(); // 退出普通选中
+                deselectUnit();
                 document.getElementById("selected-panel").classList.add("hidden");
                 document.getElementById("editor-panel").classList.remove("hidden");
-                renderBoard(); // 刷新高亮
-                addLog("🛠️ 已进入编辑模式 • 点击任意单位进行编辑", "purple");
+                renderBoard();
+                addLog("🛠️ 已进入编辑模式 • 点击单位高亮并编辑", "purple");
             } else {
                 exitEditMode();
             }
@@ -724,6 +740,7 @@
 
         function exitEditMode() {
             STATE.editMode = false;
+            STATE.editingUnit = null;
             const btn = document.getElementById("edit-mode-btn");
             const icon = document.getElementById("edit-icon");
             const text = document.getElementById("edit-text");
@@ -740,32 +757,28 @@
             const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
             if (combatUnit) {
                 STATE.editingUnit = { team: combatTeam, id: combatUnit.id, isTerrain: false };
-                renderEditForm();
             } else if (terrainUnit) {
                 STATE.editingUnit = { team: "terrain", id: terrainUnit.id, isTerrain: true };
-                renderEditForm();
             } else {
-                // 点击空地时不做任何操作（可扩展为快速添加）
-                addLog("🟡 点击空地可后续扩展为快速添加单位", "amber");
+                return;
             }
+            renderBoard();           // 触发高亮
+            renderEditForm();
         }
 
-        /* ====================== 编辑器表单渲染（核心新特性） ====================== */
+        /* ====================== 编辑器表单（独立单位 + 技能预览/修改按钮） ====================== */
         function renderEditForm() {
             const container = document.getElementById("edit-unit-form");
             if (!STATE.editingUnit) {
-                container.innerHTML = `<div class="text-center text-slate-400 py-12">点击棋盘上的单位开始编辑</div>`;
+                container.innerHTML = `<div class="text-center text-slate-400 py-12">点击棋盘上的单位开始编辑（选中后高亮）</div>`;
                 return;
             }
 
             const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
             if (!unit) return;
 
-            const config = GAME_CONFIG.UNIT_TYPES[unit.type] || { emoji: "?", name: "未知" };
-
             let html = `
                 <div class="space-y-6">
-                    <!-- 基本信息 -->
                     <div>
                         <div class="text-xs uppercase text-purple-300 mb-2">基本属性</div>
                         <div class="grid grid-cols-2 gap-4">
@@ -782,68 +795,44 @@
                                     <button onclick="quickSetEmoji('🔵')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔵</button>
                                     <button onclick="quickSetEmoji('❤️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">❤️</button>
                                 </div>
-                                <input id="edit-emoji" type="text" value="${config.emoji}" 
-                                       class="editor-input w-full px-4 py-3 rounded-2xl text-3xl text-center" maxlength="2">
+                                <input id="edit-emoji" type="text" value="${unit.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl text-3xl text-center" maxlength="2">
                             </div>
                             <div>
                                 <label class="block text-xs mb-1">名称</label>
-                                <input id="edit-name" type="text" value="${config.name}" class="editor-input w-full px-4 py-3 rounded-2xl">
+                                <input id="edit-name" type="text" value="${unit.name}" class="editor-input w-full px-4 py-3 rounded-2xl">
                             </div>
                         </div>
                     </div>
 
-                    <!-- 数值属性 -->
                     <div class="grid grid-cols-3 gap-4">
-                        <div>
-                            <label class="block text-xs mb-1">攻击力 ATK</label>
-                            <input id="edit-atk" type="number" value="${config.atk || 0}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        </div>
-                        <div>
-                            <label class="block text-xs mb-1">防御力 DEF</label>
-                            <input id="edit-def" type="number" value="${config.def || 0}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        </div>
-                        <div>
-                            <label class="block text-xs mb-1">蓝量 MANA</label>
-                            <input id="edit-mana" type="number" value="${config.mana || 0}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        </div>
+                        <div><label class="block text-xs mb-1">攻击力 ATK</label><input id="edit-atk" type="number" value="${unit.atk}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        <div><label class="block text-xs mb-1">防御力 DEF</label><input id="edit-def" type="number" value="${unit.def}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        <div><label class="block text-xs mb-1">蓝量 MANA</label><input id="edit-mana" type="number" value="${unit.mana}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                     </div>
                     <div class="grid grid-cols-3 gap-4">
-                        <div>
-                            <label class="block text-xs mb-1">移动范围</label>
-                            <input id="edit-move" type="number" value="${config.moveRange || 0}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        </div>
-                        <div>
-                            <label class="block text-xs mb-1">攻击范围</label>
-                            <input id="edit-atkRange" type="number" value="${config.atkRange || 0}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        </div>
-                        <div>
-                            <label class="block text-xs mb-1">生命值 HP</label>
-                            <input id="edit-hp" type="number" value="${unit.hp || config.hp || 0}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        </div>
+                        <div><label class="block text-xs mb-1">移动范围</label><input id="edit-move" type="number" value="${unit.moveRange}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        <div><label class="block text-xs mb-1">攻击范围</label><input id="edit-atkRange" type="number" value="${unit.atkRange}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        <div><label class="block text-xs mb-1">生命值 HP</label><input id="edit-hp" type="number" value="${unit.hp}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                     </div>
 
-                    <!-- 技能配置（仅战斗单位） -->
                     ${!STATE.editingUnit.isTerrain ? `
                     <div>
-                        <div class="text-xs uppercase text-purple-300 mb-2 flex justify-between items-center">
+                        <div class="text-xs uppercase text-purple-300 mb-2 flex justify-between">
                             <span>普通技能</span>
-                            <button onclick="showAddSkillModal()" class="text-[10px] px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded-xl">+ 新增技能</button>
+                            <button onclick="showAddSkillForm()" class="text-[10px] px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded-xl">+ 新增技能</button>
                         </div>
                         <div id="edit-normal-skills" class="flex flex-wrap gap-2"></div>
                         <div class="mt-4">
                             <label class="block text-xs mb-1">终极技能</label>
                             <select id="edit-ult-skill" class="editor-input w-full px-4 py-3 rounded-2xl">
-                                ${Object.keys(GAME_CONFIG.SKILLS).map(k => `<option value="${k}" ${config.ultSkill === k ? 'selected' : ''}>${GAME_CONFIG.SKILLS[k].name}</option>`).join('')}
+                                ${Object.keys(GAME_CONFIG.SKILLS).map(k => `<option value="${k}" ${unit.ultSkill === k ? 'selected' : ''}>${GAME_CONFIG.SKILLS[k].name}</option>`).join('')}
                             </select>
                         </div>
-                    </div>` : ''}
-
-                    <!-- 地形专用 -->
-                    ${STATE.editingUnit.isTerrain ? `
+                    </div>` : `
                     <div>
                         <label class="block text-xs mb-1">描述</label>
-                        <textarea id="edit-desc" class="editor-input w-full px-4 py-3 rounded-3xl h-20">${config.desc || ''}</textarea>
-                    </div>` : ''}
+                        <textarea id="edit-desc" class="editor-input w-full px-4 py-3 rounded-3xl h-20">${unit.desc || ''}</textarea>
+                    </div>`}
 
                     <div class="flex gap-3 pt-4 border-t border-white/10">
                         <button onclick="saveCurrentEdit()" class="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-3xl font-bold">保存修改</button>
@@ -854,10 +843,7 @@
 
             container.innerHTML = html;
 
-            // 渲染当前普通技能（可删除）
-            if (!STATE.editingUnit.isTerrain) {
-                renderCurrentNormalSkills();
-            }
+            if (!STATE.editingUnit.isTerrain) renderCurrentNormalSkills();
         }
 
         function quickSetEmoji(emoji) {
@@ -869,56 +855,56 @@
             const container = document.getElementById("edit-normal-skills");
             if (!container) return;
             const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
-            const config = GAME_CONFIG.UNIT_TYPES[unit.type];
-            const currentSkills = config.normalSkills || [];
+            const currentSkills = unit.normalSkills || [];
 
             container.innerHTML = currentSkills.map(skillId => {
                 const skill = GAME_CONFIG.SKILLS[skillId];
                 if (!skill) return '';
                 return `
-                    <div onclick="removeNormalSkill('${skillId}')" 
-                         class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-2xl cursor-pointer">
+                    <div class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-2xl cursor-pointer group">
                         <span class="text-xl">${skill.emoji}</span>
-                        <span>${skill.name}</span>
-                        <span class="ml-auto text-rose-400 text-xs">×</span>
+                        <span class="flex-1">${skill.name}</span>
+                        <button onclick="event.stopImmediatePropagation(); previewSkillInEdit('${skillId}');" class="text-cyan-400 text-xs px-3 py-1 rounded-xl bg-slate-700 hover:bg-cyan-900">预览</button>
+                        <button onclick="event.stopImmediatePropagation(); deleteSkill('${skillId}');" class="text-rose-400 text-xs px-3 py-1 rounded-xl bg-slate-700 hover:bg-rose-900">删除</button>
                     </div>`;
             }).join('');
         }
 
-        function removeNormalSkill(skillId) {
+        function previewSkillInEdit(skillId) {
             const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
-            const config = GAME_CONFIG.UNIT_TYPES[unit.type];
-            config.normalSkills = config.normalSkills.filter(s => s !== skillId);
+            highlightSkillRange(unit, skillId);
+            if (STATE.previewTimeout) clearTimeout(STATE.previewTimeout);
+            STATE.previewTimeout = setTimeout(() => renderBoard(), 2200);
+            addLog(`预览技能范围：${GAME_CONFIG.SKILLS[skillId].emoji} ${GAME_CONFIG.SKILLS[skillId].name}`, "cyan");
+        }
+
+        function deleteSkill(skillId) {
+            const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+            unit.normalSkills = unit.normalSkills.filter(s => s !== skillId);
             renderEditForm();
         }
 
         function saveCurrentEdit() {
             if (!STATE.editingUnit) return;
             const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
-            const config = GAME_CONFIG.UNIT_TYPES[unit.type];
 
-            // 保存基本属性
-            config.emoji = document.getElementById("edit-emoji").value || config.emoji;
-            config.name = document.getElementById("edit-name").value || config.name;
-            config.atk = parseInt(document.getElementById("edit-atk").value) || 0;
-            config.def = parseInt(document.getElementById("edit-def").value) || 0;
-            config.mana = parseInt(document.getElementById("edit-mana").value) || 0;
-            config.moveRange = parseInt(document.getElementById("edit-move").value) || 0;
-            config.atkRange = parseInt(document.getElementById("edit-atkRange").value) || 0;
+            unit.emoji = document.getElementById("edit-emoji").value || unit.emoji;
+            unit.name = document.getElementById("edit-name").value || unit.name;
+            unit.atk = parseInt(document.getElementById("edit-atk").value) || 0;
+            unit.def = parseInt(document.getElementById("edit-def").value) || 0;
+            unit.mana = parseInt(document.getElementById("edit-mana").value) || 0;
+            unit.moveRange = parseInt(document.getElementById("edit-move").value) || 0;
+            unit.atkRange = parseInt(document.getElementById("edit-atkRange").value) || 0;
+            unit.hp = parseInt(document.getElementById("edit-hp").value) || unit.hp;
+            if (unit.maxHp) unit.maxHp = unit.hp;
 
-            if (unit.hp !== undefined) unit.hp = parseInt(document.getElementById("edit-hp").value) || unit.hp;
-            if (config.desc !== undefined) config.desc = document.getElementById("edit-desc").value || config.desc;
-
-            // 终极技能
             if (!STATE.editingUnit.isTerrain) {
-                config.ultSkill = document.getElementById("edit-ult-skill").value;
+                unit.ultSkill = document.getElementById("edit-ult-skill").value;
+            } else if (document.getElementById("edit-desc")) {
+                unit.desc = document.getElementById("edit-desc").value;
             }
 
-            // 同步单位当前状态
-            if (unit.maxMana !== undefined) unit.maxMana = config.mana;
-            if (unit.currentMana !== undefined) unit.currentMana = Math.min(unit.currentMana, unit.maxMana);
-
-            addLog(`✅ 已保存 <span class="text-purple-400">${config.emoji} ${config.name}</span> 的修改`, "purple");
+            addLog(`✅ 已保存 <span class="text-purple-400">${unit.emoji} ${unit.name}</span> 的独立修改`, "purple");
             renderBoard();
             renderEditForm();
             updateAllLists();
@@ -926,13 +912,10 @@
 
         function deleteCurrentUnit() {
             if (!STATE.editingUnit) return;
-            if (STATE.editingUnit.team === "terrain") {
-                STATE.terrainUnits = STATE.terrainUnits.filter(t => t.id !== STATE.editingUnit.id);
-            } else if (STATE.editingUnit.team === "friendly") {
-                STATE.friendlyUnits = STATE.friendlyUnits.filter(u => u.id !== STATE.editingUnit.id);
-            } else if (STATE.editingUnit.team === "enemy") {
-                STATE.enemyUnits = STATE.enemyUnits.filter(u => u.id !== STATE.editingUnit.id);
-            }
+            if (STATE.editingUnit.team === "terrain") STATE.terrainUnits = STATE.terrainUnits.filter(t => t.id !== STATE.editingUnit.id);
+            else if (STATE.editingUnit.team === "friendly") STATE.friendlyUnits = STATE.friendlyUnits.filter(u => u.id !== STATE.editingUnit.id);
+            else if (STATE.editingUnit.team === "enemy") STATE.enemyUnits = STATE.enemyUnits.filter(u => u.id !== STATE.editingUnit.id);
+
             addLog("🗑️ 已删除单位", "rose");
             STATE.editingUnit = null;
             renderBoard();
@@ -942,53 +925,75 @@
 
         function addNewFriendlyUnit() {
             const id = "f_new_" + Date.now();
-            const type = Object.keys(GAME_CONFIG.UNIT_TYPES).find(k => !GAME_CONFIG.UNIT_TYPES[k].isTerrain) || "knight";
-            STATE.friendlyUnits.push(createCombatUnit({id, type, row: 0, col: 0}));
-            addLog(`+ 新增友方单位 ${GAME_CONFIG.UNIT_TYPES[type].emoji}`, "emerald");
+            const template = GAME_CONFIG.UNIT_TYPES.knight;
+            const newUnit = createCombatUnit({id, type: "knight", row: 2, col: 2});
+            STATE.friendlyUnits.push(newUnit);
+            addLog(`+ 新增独立友方单位 ${newUnit.emoji}`, "emerald");
             renderBoard();
             updateAllLists();
         }
 
         function addNewEnemyUnit() {
             const id = "e_new_" + Date.now();
-            const type = Object.keys(GAME_CONFIG.UNIT_TYPES).find(k => !GAME_CONFIG.UNIT_TYPES[k].isTerrain) || "heavy";
-            STATE.enemyUnits.push(createCombatUnit({id, type, row: 9, col: 9}));
-            addLog(`+ 新增敌方单位 ${GAME_CONFIG.UNIT_TYPES[type].emoji}`, "rose");
+            const newUnit = createCombatUnit({id, type: "heavy", row: 7, col: 7});
+            STATE.enemyUnits.push(newUnit);
+            addLog(`+ 新增独立敌方单位 ${newUnit.emoji}`, "rose");
             renderBoard();
             updateAllLists();
         }
 
         function addNewTerrainUnit() {
             const id = "t_new_" + Date.now();
-            const type = "manaPoint"; // 默认回蓝点，可后续改
-            STATE.terrainUnits.push({id, type, row: 4, col: 4});
-            addLog(`+ 新增地形 ${GAME_CONFIG.UNIT_TYPES[type].emoji}`, "amber");
+            const template = GAME_CONFIG.UNIT_TYPES.manaPoint;
+            const newTerrain = { id, type: "manaPoint", row: 4, col: 4, ...template };
+            STATE.terrainUnits.push(newTerrain);
+            addLog(`+ 新增独立地形 ${newTerrain.emoji}`, "amber");
             renderBoard();
         }
 
-        /* ====================== 技能添加模态（简易） ====================== */
-        function showAddSkillModal() {
-            const name = prompt("新技能名称：", "新技能");
-            if (!name) return;
-            const emoji = prompt("技能图标（Emoji）：", "✨");
-            const manaCost = parseInt(prompt("消耗蓝量：", "5")) || 5;
-            const range = parseInt(prompt("技能范围：", "2")) || 2;
-            const damage = parseInt(prompt("伤害：", "12")) || 12;
-            const desc = prompt("技能描述：", "自定义技能");
+        function showAddSkillForm() {
+            const container = document.getElementById("edit-unit-form");
+            const html = `
+                <div class="border border-purple-400/30 rounded-3xl p-5 mb-6">
+                    <div class="text-purple-400 font-bold mb-4">新增/编辑技能</div>
+                    <div class="space-y-4">
+                        <input id="new-skill-emoji" placeholder="图标" value="✨" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <input id="new-skill-name" placeholder="技能名称" value="自定义技能" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <div class="grid grid-cols-3 gap-4">
+                            <div><input id="new-skill-cost" type="number" value="4" placeholder="蓝量" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><input id="new-skill-range" type="number" value="2" placeholder="范围" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><input id="new-skill-dmg" type="number" value="12" placeholder="伤害" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        </div>
+                        <input id="new-skill-desc" placeholder="描述" value="自定义新技能" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <div class="flex gap-3">
+                            <button onclick="confirmAddSkill()" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 rounded-2xl font-bold">确认添加</button>
+                            <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold">取消</button>
+                        </div>
+                    </div>
+                </div>`;
+            container.innerHTML = html + container.innerHTML; // 插入到顶部
+        }
+
+        function confirmAddSkill() {
+            const emoji = document.getElementById("new-skill-emoji").value || "✨";
+            const name = document.getElementById("new-skill-name").value || "新技能";
+            const manaCost = parseInt(document.getElementById("new-skill-cost").value) || 4;
+            const range = parseInt(document.getElementById("new-skill-range").value) || 2;
+            const damage = parseInt(document.getElementById("new-skill-dmg").value) || 12;
+            const desc = document.getElementById("new-skill-desc").value || "";
 
             const skillId = "custom_" + Date.now();
             GAME_CONFIG.SKILLS[skillId] = { emoji, name, manaCost, range, damage, desc };
 
-            // 自动加入当前编辑单位的普通技能
-            const unitConfig = GAME_CONFIG.UNIT_TYPES[getUnit(STATE.editingUnit.team, STATE.editingUnit.id).type];
-            if (unitConfig.normalSkills) unitConfig.normalSkills.push(skillId);
-            else unitConfig.normalSkills = [skillId];
+            const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+            if (!unit.normalSkills) unit.normalSkills = [];
+            unit.normalSkills.push(skillId);
 
-            addLog(`✅ 新技能已创建并加入单位：${emoji} ${name}`, "purple");
+            addLog(`✅ 新技能已独立添加到单位：${emoji} ${name}`, "purple");
             renderEditForm();
         }
 
-        /* ====================== 敌方技能预览（新特性） ====================== */
+        /* ====================== UI 更新（敌方技能预览优化） ====================== */
         function updateSelectedPanel() {
             const panel = document.getElementById("selected-panel");
             if (!STATE.selected) { panel.classList.add("hidden"); return; }
@@ -996,19 +1001,18 @@
             const entity = getUnit(STATE.selected.team, STATE.selected.id);
             if (!entity) { panel.classList.add("hidden"); return; }
 
-            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             const isTerrain = STATE.selected.team === "terrain";
             const isFriendly = STATE.selected.team === "friendly";
 
-            document.getElementById("selected-emoji").innerHTML = config.emoji;
-            document.getElementById("selected-name").textContent = config.name;
+            document.getElementById("selected-emoji").innerHTML = entity.emoji;
+            document.getElementById("selected-name").textContent = entity.name;
 
             if (isTerrain) {
                 document.getElementById("selected-team").innerHTML = `<span class="bg-slate-400 text-white px-3 py-0.5 rounded-full text-xs">地形</span>`;
                 document.getElementById("unit-stats").classList.add("hidden");
                 document.getElementById("skill-selection").classList.add("hidden");
                 document.getElementById("terrain-desc").classList.remove("hidden");
-                document.getElementById("terrain-desc-text").innerHTML = config.desc;
+                document.getElementById("terrain-desc-text").innerHTML = entity.desc || "";
             } else {
                 document.getElementById("selected-team").innerHTML = isFriendly 
                     ? `<span class="bg-emerald-400 text-white px-3 py-0.5 rounded-full text-xs">友方</span>`
@@ -1021,14 +1025,14 @@
                 document.getElementById("selected-hp-fill").className = `hp-fill ${isFriendly ? "bg-emerald-400" : "bg-rose-400"}`;
                 document.getElementById("selected-hp-text").innerHTML = `${entity.hp} / ${entity.maxHp}`;
 
-                document.getElementById("selected-atk").textContent = config.atk;
-                document.getElementById("selected-def").textContent = config.def;
+                document.getElementById("selected-atk").textContent = entity.atk;
+                document.getElementById("selected-def").textContent = entity.def;
                 document.getElementById("selected-mana").innerHTML = `<span class="text-cyan-400">${entity.currentMana}</span> / ${entity.maxMana}`;
 
-                const remaining = isFriendly ? entity.remainingMove : config.moveRange;
-                document.getElementById("selected-remaining-move").innerHTML = `<span class="text-emerald-400">${remaining}</span> / ${config.moveRange}`;
+                const remaining = isFriendly ? entity.remainingMove : entity.moveRange;
+                document.getElementById("selected-remaining-move").innerHTML = `<span class="text-emerald-400">${remaining}</span> / ${entity.moveRange}`;
 
-                const effectiveAtk = entity.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
+                const effectiveAtk = entity.forestModifier ? Math.max(1, entity.atkRange - 1) : entity.atkRange;
                 document.getElementById("selected-range").innerHTML = `<span class="text-rose-400">${effectiveAtk}</span>`;
 
                 const skillDiv = document.getElementById("skill-selection");
@@ -1042,7 +1046,7 @@
                     ? `<span class="text-cyan-400">🔵</span> 技能选择（点击激活）` 
                     : `<span class="text-rose-400">🔴</span> 敌方技能（点击预览范围）`;
 
-                const skillIds = (config.normalSkills || []).concat(config.ultSkill ? [config.ultSkill] : []);
+                const skillIds = (entity.normalSkills || []).concat(entity.ultSkill ? [entity.ultSkill] : []);
 
                 skillIds.forEach(skillId => {
                     const skill = GAME_CONFIG.SKILLS[skillId];
@@ -1057,17 +1061,17 @@
                             <div class="text-[10px] text-cyan-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span> • 伤害 ${skill.damage}</div>
                         </div>
                     `;
-                    // 敌方也支持点击预览范围
                     btn.onclick = () => {
                         if (isFriendly && canUse && STATE.currentTurn === "player") {
                             activateSkill(skillId);
                         } else {
-                            // 预览范围（敌方或无法使用时）
+                            // 敌方预览（修复中断：延长定时并清除旧定时）
+                            if (STATE.previewTimeout) clearTimeout(STATE.previewTimeout);
                             highlightSkillRange(entity, skillId);
-                            setTimeout(() => {
-                                if (!STATE.selectedSkill) renderBoard(); // 清除高亮
-                            }, 1800);
-                            addLog(`预览技能范围：${skill.emoji} ${skill.name}`, "cyan");
+                            STATE.previewTimeout = setTimeout(() => {
+                                renderBoard();
+                            }, 2800);
+                            addLog(`预览敌方技能范围：${skill.emoji} ${skill.name}`, "cyan");
                         }
                     };
                     skillsList.appendChild(btn);
@@ -1076,17 +1080,16 @@
             panel.classList.remove("hidden");
         }
 
-        /* ====================== 其他函数（保持不变） ====================== */
-        function updateAllLists() { /* 保持不变 */ 
+        /* ====================== 其他函数 ====================== */
+        function updateAllLists() {
             const fList = document.getElementById("friendly-list");
             fList.innerHTML = "";
             STATE.friendlyUnits.forEach(u => {
                 if (u.hp <= 0) return;
-                const config = GAME_CONFIG.UNIT_TYPES[u.type];
                 const percent = Math.round((u.hp / u.maxHp) * 100);
                 const div = document.createElement("div");
                 div.className = "flex items-center gap-3 bg-emerald-900/30 px-3 py-2 rounded-2xl text-xs";
-                div.innerHTML = `<span class="text-2xl">${config.emoji}</span><div class="flex-1"><div class="font-medium">${config.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-emerald-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
+                div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-emerald-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
                 fList.appendChild(div);
             });
 
@@ -1094,21 +1097,20 @@
             eList.innerHTML = "";
             STATE.enemyUnits.forEach(u => {
                 if (u.hp <= 0) return;
-                const config = GAME_CONFIG.UNIT_TYPES[u.type];
                 const percent = Math.round((u.hp / u.maxHp) * 100);
                 const div = document.createElement("div");
                 div.className = "flex items-center gap-3 bg-rose-900/30 px-3 py-2 rounded-2xl text-xs";
-                div.innerHTML = `<span class="text-2xl">${config.emoji}</span><div class="flex-1"><div class="font-medium">${config.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-rose-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
+                div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-rose-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
                 eList.appendChild(div);
             });
         }
 
-        function checkGameOver() { /* 保持不变 */ 
+        function checkGameOver() {
             if (STATE.friendlyUnits.every(u => u.hp <= 0)) setTimeout(() => showResult(false), 300);
             else if (STATE.enemyUnits.every(u => u.hp <= 0)) setTimeout(() => showResult(true), 300);
         }
 
-        function updateUI() { /* 保持不变 */ 
+        function updateUI() {
             const turnEl = document.getElementById("turn-team");
             turnEl.innerHTML = STATE.currentTurn === "player" ? `🟦 玩家回合` : `🔴 敌方回合`;
             turnEl.className = `turn-indicator ${STATE.currentTurn === "player" ? "text-emerald-400" : "text-rose-400"}`;
@@ -1117,7 +1119,7 @@
             document.getElementById("end-turn-btn").disabled = STATE.currentTurn !== "player";
         }
 
-        function showResult(isWin) { /* 保持不变 */ 
+        function showResult(isWin) {
             const modal = document.getElementById("result-modal");
             modal.classList.remove("hidden");
             const iconEl = document.getElementById("result-icon");
@@ -1134,11 +1136,11 @@
             }
         }
         
-        function hideModal() { /* 保持不变 */ 
+        function hideModal() { 
             document.getElementById("result-modal").classList.add("hidden");
         }
 
-        /* ====================== 存档系统（保持不变） ====================== */
+        /* ====================== 存档系统 ====================== */
         function exportBoard() {
             const exportData = {
                 unitTypes: GAME_CONFIG.UNIT_TYPES,
@@ -1196,8 +1198,8 @@
             e.target.value = "";
         }
 
-        /* ====================== 回合与AI（保持不变） ====================== */
-        function enemyTurn() { /* 保持不变 */ /* ... 原有敌方AI逻辑 ... */ 
+        /* ====================== 回合与AI ====================== */
+        function enemyTurn() {
             STATE.currentTurn = "enemy";
             updateUI();
             addLog("🔴 敌方回合开始...", "rose");
@@ -1265,7 +1267,7 @@
             setTimeout(actNextEnemy, 800);
         }
 
-        function finishEnemyTurn() { /* 保持不变 */ 
+        function finishEnemyTurn() {
             STATE.currentTurn = "player";
             STATE.turnCount++;
             applyManaRegen("enemy");
@@ -1278,14 +1280,14 @@
             addLog("✅ 敌方回合结束，轮到你了！", "emerald");
         }
 
-        function endPlayerTurn() { /* 保持不变 */ 
+        function endPlayerTurn() {
             if (STATE.currentTurn !== "player") return;
             deselectUnit();
             applyManaRegen("friendly");
             enemyTurn();
         }
 
-        function applyManaRegen(team) { /* 保持不变 */ 
+        function applyManaRegen(team) {
             const units = team === "friendly" ? STATE.friendlyUnits : STATE.enemyUnits;
             let anyRegen = false;
             units.forEach(u => {
@@ -1297,7 +1299,7 @@
             if (team === "friendly" && anyRegen) addLog(`本回合未使用技能，友方单位回复 <span class="font-mono">2</span> 蓝量`, "cyan");
         }
 
-        function resetActionsForTeam(team) { /* 保持不变 */ 
+        function resetActionsForTeam(team) {
             const units = team === "friendly" ? STATE.friendlyUnits : STATE.enemyUnits;
             units.forEach(u => {
                 if (u.hp > 0) {
@@ -1310,7 +1312,7 @@
             });
         }
 
-        function generatePowerUp() { /* 保持不变 */ 
+        function generatePowerUp() {
             let candidates = [];
             for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
                 for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
@@ -1327,11 +1329,14 @@
             addLog(`生成新地形 <span class="text-cyan-400">${GAME_CONFIG.UNIT_TYPES[type].emoji} ${GAME_CONFIG.UNIT_TYPES[type].name}</span>`, "cyan");
         }
 
-        /* ====================== 重置游戏（保持不变） ====================== */
+        /* ====================== 重置游戏 ====================== */
         function resetGame() {
             STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(createCombatUnit);
             STATE.enemyUnits = GAME_CONFIG.INITIAL.enemy.map(createCombatUnit);
-            STATE.terrainUnits = GAME_CONFIG.INITIAL.terrain.map(base => ({ ...base }));
+            STATE.terrainUnits = GAME_CONFIG.INITIAL.terrain.map(base => {
+                const template = GAME_CONFIG.UNIT_TYPES[base.type];
+                return { ...base, ...template };
+            });
 
             STATE.currentTurn = "player";
             STATE.turnCount = 1;
@@ -1343,7 +1348,7 @@
             document.getElementById("log-container").innerHTML = "";
             addLog("🎮 新一局开始！友方 2 单位 vs 敌方 2 单位", "emerald");
             addLog("地图上已生成 <span class='text-amber-300'>山峰、河流、森林</span> 地形", "amber");
-            addLog("点击任意单位（含敌方）可查看/预览技能", "cyan");
+            addLog("点击任意单位（含敌方）可查看/预览技能 • 编辑模式下单位独立", "cyan");
 
             resetActionsForTeam("friendly");
             resetActionsForTeam("enemy");
