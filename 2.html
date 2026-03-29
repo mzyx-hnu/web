@@ -40,6 +40,12 @@
             box-shadow: 0 0 0 6px rgb(239 68 68) inset;
             animation: attackPulse 2s infinite;
         }
+        /* 新增：技能范围高亮（青色，区别于普通攻击） */
+        .highlight-skill {
+            background: rgba(165, 243, 252, 0.68) !important;
+            box-shadow: 0 0 0 6px rgb(165 243 252) inset;
+            animation: attackPulse 2s infinite;
+        }
         /* 重叠格子闪烁（移动+攻击范围重合时） */
         .highlight-overlap {
             background: rgba(16, 185, 129, 0.45) !important;
@@ -50,10 +56,7 @@
             100% { background: rgba(239, 68, 68, 0.68) !important; box-shadow: 0 0 0 6px rgb(239 68 68) inset; }
         }
 
-        /* ====================== 关键修改：支持战斗单位 + 地形单位同时显示 ====================== */
-        /* 战斗单位 emoji 使用 ::before（左上角，大字号） */
-        /* 地形单位 emoji 使用 ::after（右下角，小字号） */
-        /* 即使同一个格子有战斗单位和地形，也能同时渲染两个 emoji */
+        /* ====================== 支持战斗单位 + 地形单位同时显示 ====================== */
         .unit-cell::before {
             content: attr(data-combat);
             font-size: 2.25rem;
@@ -104,7 +107,7 @@
                     <span id="turn-team" class="turn-indicator">🟦 玩家回合</span>
                     <span id="turn-number" class="font-mono text-xl text-white">01</span>
                 </div>
-                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击1次 • 重叠格子闪烁</div>
+                <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击1次 • 重叠格子闪烁 • 新增技能系统</div>
             </div>
 
             <button onclick="endPlayerTurn()" 
@@ -121,10 +124,11 @@
                 <div class="font-bold text-emerald-400 uppercase tracking-widest text-center mb-2">游戏规则（地形版）</div>
                 <div class="text-slate-300 leading-relaxed space-y-3 text-[13px]">
                     <p>1. 点击任意单位/地形查看属性与范围</p>
-                    <p>2. 友方可多次移动（总距离≤移动范围），攻击仅1次</p>
+                    <p>2. 友方可多次移动（总距离≤移动范围），攻击/技能仅1次</p>
                     <p>3. 重叠格子：左上战斗单位 + 右下地形</p>
-                    <p>4. 移动/攻击范围为0时不显示高亮</p>
+                    <p>4. 移动/攻击/技能范围为0时不显示高亮</p>
                     <p>5. 移动+攻击重合格子闪烁两种颜色</p>
+                    <p>6. <span class="text-cyan-400">攻击后不再显示攻击范围；技能范围独立显示（青色）</span></p>
                     <p class="text-amber-300">• 山峰 ⛰️：不可进入</p>
                     <p class="text-amber-300">• 河流 🌊：进入后剩余移动仅1格</p>
                     <p class="text-amber-300">• 森林 🌲：进入后移动/攻击-1（最低1），外部单位只能相邻攻击森林内单位</p>
@@ -179,6 +183,11 @@
                             <span class="font-bold text-sky-300">🛡️ 防御力 DEF</span>
                             <span id="selected-def" class="font-mono text-xl font-bold"></span>
                         </div>
+                        <!-- 新增：蓝量显示 -->
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="font-bold text-cyan-300">🔵 蓝量 MANA</span>
+                            <span id="selected-mana" class="font-mono text-xl font-bold"></span>
+                        </div>
                         <div class="flex justify-between items-center text-sm">
                             <span class="font-bold text-emerald-300">🚶 剩余移动</span>
                             <span id="selected-remaining-move" class="font-mono text-xl font-bold"></span>
@@ -187,6 +196,14 @@
                             <span class="font-bold text-rose-300">🎯 攻击范围</span>
                             <span id="selected-range" class="font-mono text-xl font-bold"></span>
                         </div>
+                    </div>
+
+                    <!-- 新增：技能选择面板（完全解耦，可自由扩展） -->
+                    <div id="skill-selection" class="hidden bg-slate-900/60 rounded-2xl p-4 mt-4">
+                        <div class="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-3 flex items-center gap-2">
+                            <span>🔵</span> 技能选择（攻击行动替代）
+                        </div>
+                        <div id="skills-list" class="flex flex-col gap-2"></div>
                     </div>
 
                     <div id="terrain-desc" class="hidden bg-slate-900/60 rounded-2xl p-4">
@@ -224,22 +241,82 @@
     <script>
         /**
          * ====================== 配置模块（GAME_CONFIG）======================
-         * 完全解耦：单位定义、初始位置全部集中在这里
-         * 后续新增单位/地形/初始布局，只需要修改这里即可，不影响其他任何逻辑或渲染代码
+         * 完全解耦：单位定义、技能定义、初始位置全部集中在这里
+         * 新增：SKILLS 对象 + 每个战斗单位引用技能ID，实现零侵入扩展
          */
         const GAME_CONFIG = {
-            // 单位/地形定义（可自由扩展属性）
+            // 单位/地形定义（新增 mana + normalSkills + ultSkill）
             UNIT_TYPES: {
-                knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, isTerrain: false },
-                archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, isTerrain: false },
-                heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, isTerrain: false },
-                mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, isTerrain: false },
+                knight:  { 
+                    emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, 
+                    mana: 10, normalSkills: ["doubleStrike", "shieldBash"], ultSkill: "ultimateStrike",
+                    isTerrain: false 
+                },
+                archer:  { 
+                    emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, 
+                    mana: 12, normalSkills: ["precisionShot", "arcaneBlast"], ultSkill: "ultimateStrike",
+                    isTerrain: false 
+                },
+                heavy:   { 
+                    emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, 
+                    mana: 8, normalSkills: ["shieldBash", "doubleStrike"], ultSkill: "ultimateStrike",
+                    isTerrain: false 
+                },
+                mage:    { 
+                    emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, 
+                    mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike",
+                    isTerrain: false 
+                },
                 mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true },
                 river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true },
                 forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true }
             },
 
-            // 初始布局（位置完全独立于逻辑和渲染）
+            // 新增：技能定义（完全独立，可任意新增技能）
+            SKILLS: {
+                doubleStrike: {
+                    emoji: "⚔️",
+                    name: "双重斩击",
+                    manaCost: 4,
+                    range: 1,
+                    damage: 15,
+                    desc: "近战高威力斩击"
+                },
+                precisionShot: {
+                    emoji: "🏹",
+                    name: "精准射击",
+                    manaCost: 3,
+                    range: 4,
+                    damage: 11,
+                    desc: "超远距离精准攻击"
+                },
+                arcaneBlast: {
+                    emoji: "🔥",
+                    name: "奥术冲击",
+                    manaCost: 5,
+                    range: 2,
+                    damage: 14,
+                    desc: "魔法爆炸伤害"
+                },
+                shieldBash: {
+                    emoji: "🛡️",
+                    name: "盾牌猛击",
+                    manaCost: 3,
+                    range: 1,
+                    damage: 9,
+                    desc: "坦克近战反击"
+                },
+                ultimateStrike: {
+                    emoji: "🌟",
+                    name: "终极审判",
+                    manaCost: 9,
+                    range: 3,
+                    damage: 25,
+                    desc: "消耗大量蓝量的终极一击"
+                }
+            },
+
+            // 初始布局（位置完全独立）
             INITIAL: {
                 friendly: [
                     { id: "f1", type: "knight", row: 1, col: 2 },
@@ -265,7 +342,7 @@
 
         /**
          * ====================== 状态模块（STATE）======================
-         * 全局游戏状态，渲染和逻辑都只读/写这里
+         * 新增：selectedSkill（技能激活状态）
          */
         let STATE = {
             friendlyUnits: [],
@@ -273,12 +350,12 @@
             terrainUnits: [],
             currentTurn: "player",
             turnCount: 1,
-            selected: null
+            selected: null,
+            selectedSkill: null   // 新增：当前激活的技能ID（null = 未激活）
         };
 
         /**
          * ====================== 辅助函数 ======================
-         * 纯工具函数，不含业务逻辑
          */
         function addLog(message, color = "slate") {
             const container = document.getElementById("log-container");
@@ -295,11 +372,7 @@
             return STATE[team + "Units"].find(u => u.id === id);
         }
 
-        /**
-         * 创建战斗单位（从配置读取默认属性）
-         * 解耦：新增单位属性时只需要修改 GAME_CONFIG.UNIT_TYPES，这里自动继承
-         */
-        function createCombatUnit(base, team) {
+        function createCombatUnit(base) {
             const config = GAME_CONFIG.UNIT_TYPES[base.type];
             return {
                 id: base.id,
@@ -310,17 +383,30 @@
                 maxHp: config.hp,
                 remainingMove: config.moveRange,
                 hasAttacked: false,
-                forestModifier: false
+                forestModifier: false,
+                maxMana: config.mana,
+                currentMana: config.mana
             };
         }
 
         /**
+         * ====================== 通用范围判断（复用） ======================
+         * 攻击范围和技能范围共用此逻辑（森林防御特性）
+         */
+        function isInRange(unit, targetRow, targetCol, range) {
+            const manhattan = Math.abs(unit.row - targetRow) + Math.abs(unit.col - targetCol);
+            const targetTerrain = STATE.terrainUnits.find(t => t.row === targetRow && t.col === targetCol);
+            if (targetTerrain && targetTerrain.type === "forest") {
+                return manhattan <= 1;
+            }
+            return manhattan <= range;
+        }
+
+        /**
          * ====================== 棋盘渲染模块 ======================
-         * 完全解耦：只负责根据 STATE + GAME_CONFIG 渲染界面，不含任何操作逻辑
-         * 支持战斗单位与地形单位同时显示 emoji
+         * 已支持战斗+地形同时显示
          */
         function getCellContent(row, col) {
-            // 返回原始对象引用（便于后续逻辑修改状态）
             let combatUnit = null;
             let combatTeam = null;
             for (let u of STATE.friendlyUnits) {
@@ -356,7 +442,6 @@
 
                     const { combatUnit, combatTeam, terrainUnit } = getCellContent(r, c);
 
-                    // 设置 emoji（支持重叠）
                     if (combatUnit) {
                         cell.setAttribute("data-combat", GAME_CONFIG.UNIT_TYPES[combatUnit.type].emoji);
                         cell.style.background = combatTeam === "friendly" 
@@ -365,7 +450,6 @@
                     }
                     if (terrainUnit) {
                         cell.setAttribute("data-terrain", GAME_CONFIG.UNIT_TYPES[terrainUnit.type].emoji);
-                        // 只有没有战斗单位时才使用地形背景
                         if (!combatUnit) {
                             const type = terrainUnit.type;
                             if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
@@ -382,6 +466,11 @@
             if (STATE.selected) highlightRanges();
         }
 
+        /**
+         * ====================== 高亮模块（优化 + 新特性） ======================
+         * 1. 修复：攻击后不再渲染攻击范围（hasAttacked 时隐藏攻击高亮）
+         * 2. 新增：技能激活时只显示技能范围（青色）
+         */
         function highlightRanges() {
             const cells = document.querySelectorAll(".grid-cell");
             const sel = STATE.selected;
@@ -390,21 +479,27 @@
             const entity = getUnit(sel.team, sel.id);
             if (!entity || sel.team === "terrain") return;
 
-            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
+            if (STATE.selectedSkill) {
+                highlightSkillRange(entity, STATE.selectedSkill);
+                return;
+            }
 
-            // 移动范围
+            // 普通模式
+            const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             let maxMove = (sel.team === "friendly") ? entity.remainingMove : config.moveRange;
             if (maxMove <= 0) maxMove = 0;
             const reachable = calculateReachable(entity.row, entity.col, maxMove, entity);
 
-            // 攻击范围
             let effectiveAtk = entity.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
             if (effectiveAtk <= 0) effectiveAtk = 0;
+
+            // 修复：攻击后不再显示攻击范围
+            const hasActionLeft = sel.team === "friendly" ? !entity.hasAttacked : true;
 
             cells.forEach(cell => {
                 const r = parseInt(cell.dataset.row);
                 const c = parseInt(cell.dataset.col);
-                cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap");
+                cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap", "highlight-skill");
 
                 const key = `${r},${c}`;
                 const dist = reachable[key];
@@ -412,11 +507,10 @@
                 const isMove = (maxMove > 0 && dist !== undefined && dist > 0);
                 const manhattan = Math.abs(r - entity.row) + Math.abs(c - entity.col);
 
-                // 森林防御特性
-                let canAttack = (effectiveAtk > 0 && manhattan <= effectiveAtk);
+                let canAttack = (effectiveAtk > 0 && manhattan <= effectiveAtk && hasActionLeft);
                 const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
                 if (targetTerrain && targetTerrain.type === "forest") {
-                    canAttack = (manhattan <= 1);
+                    canAttack = (manhattan <= 1 && hasActionLeft);
                 }
 
                 if (isMove && canAttack) {
@@ -429,10 +523,31 @@
             });
         }
 
+        function highlightSkillRange(unit, skillId) {
+            const skill = GAME_CONFIG.SKILLS[skillId];
+            if (!skill) return;
+
+            const cells = document.querySelectorAll(".grid-cell");
+            cells.forEach(cell => {
+                const r = parseInt(cell.dataset.row);
+                const c = parseInt(cell.dataset.col);
+                cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap", "highlight-skill");
+
+                const manhattan = Math.abs(r - unit.row) + Math.abs(c - unit.col);
+                let canCast = (manhattan <= skill.range);
+                const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
+                if (targetTerrain && targetTerrain.type === "forest") {
+                    canCast = (manhattan <= 1);
+                }
+
+                if (canCast) {
+                    cell.classList.add("highlight-skill");
+                }
+            });
+        }
+
         /**
-         * ====================== 操作逻辑模块 ======================
-         * 完全解耦：所有点击、移动、攻击逻辑都提取成独立函数
-         * 方便后续新增规则（例如新增技能、特殊移动等）
+         * ====================== 操作逻辑模块（新增技能逻辑） ======================
          */
         function calculateReachable(startRow, startCol, maxMove, unit) {
             const directions = [[-1,0],[1,0],[0,-1],[0,1]];
@@ -487,7 +602,6 @@
             }
         }
 
-        // 尝试移动（统一处理空地和可进入地形）
         function attemptPlayerMove(unit, targetRow, targetCol) {
             if (unit.remainingMove <= 0) return false;
             const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove, unit);
@@ -503,21 +617,6 @@
             return true;
         }
 
-        // 判断是否可攻击（包含森林防御特性）
-        function canAttack(attacker, targetRow, targetCol) {
-            const config = GAME_CONFIG.UNIT_TYPES[attacker.type];
-            let effectiveAtk = attacker.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
-            if (effectiveAtk <= 0) return false;
-
-            const manhattan = Math.abs(attacker.row - targetRow) + Math.abs(attacker.col - targetCol);
-            const targetTerrain = STATE.terrainUnits.find(t => t.row === targetRow && t.col === targetCol);
-            if (targetTerrain && targetTerrain.type === "forest") {
-                return manhattan <= 1;
-            }
-            return manhattan <= effectiveAtk;
-        }
-
-        // 执行攻击
         function performAttack(attacker, defender) {
             const aConfig = GAME_CONFIG.UNIT_TYPES[attacker.type];
             const dConfig = GAME_CONFIG.UNIT_TYPES[defender.type];
@@ -528,18 +627,33 @@
             addLog(`<span class="text-${attackerColor}-400">${aConfig.emoji}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
         }
 
-        // 尝试玩家攻击
-        function attemptPlayerAttack(attacker, defender) {
-            if (attacker.hasAttacked) return false;
-            if (!canAttack(attacker, defender.row, defender.col)) return false;
+        /**
+         * 新增：技能释放逻辑
+         */
+        function performSkill(attacker, skillId, defender) {
+            const skill = GAME_CONFIG.SKILLS[skillId];
+            const dConfig = GAME_CONFIG.UNIT_TYPES[defender.type];
+            let damage = Math.max(1, skill.damage - dConfig.def);
+            defender.hp = Math.max(0, defender.hp - damage);
 
-            performAttack(attacker, defender);
-            attacker.hasAttacked = true;
-            return true;
+            addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${dConfig.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+        }
+
+        function activateSkill(skillId) {
+            if (STATE.currentTurn !== "player" || !STATE.selected || STATE.selected.team !== "friendly") return;
+            const unit = getUnit("friendly", STATE.selected.id);
+            const skill = GAME_CONFIG.SKILLS[skillId];
+            if (!skill || unit.currentMana < skill.manaCost || unit.hasAttacked) return;
+
+            STATE.selectedSkill = skillId;
+            addLog(`激活技能 <span class="text-cyan-400">${skill.emoji} ${skill.name}</span>（点击敌方目标释放）`, "cyan");
+            renderBoard();
+            updateSelectedPanel();
         }
 
         function selectUnit(team, id) {
             STATE.selected = { team, id };
+            STATE.selectedSkill = null;   // 切换单位时取消技能模式
             const entity = getUnit(team, id);
             const config = GAME_CONFIG.UNIT_TYPES[entity.type];
             const teamText = team === "friendly" ? "友方" : (team === "enemy" ? "敌方" : "地形");
@@ -550,27 +664,29 @@
 
         function deselectUnit() {
             STATE.selected = null;
+            STATE.selectedSkill = null;
             renderBoard();
             updateSelectedPanel();
         }
 
-        // 主点击处理（已完全解耦为多个小函数）
+        /**
+         * 主点击处理（新增技能模式优先判断）
+         */
         function handleCellClick(row, col) {
             if (STATE.currentTurn !== "player") return;
 
-            const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
-            const sel = STATE.selected;
-
-            // 1. 点击战斗单位
-            if (combatUnit) {
-                if (sel && sel.team === combatTeam && sel.id === combatUnit.id) {
-                    deselectUnit();
-                    return;
-                }
-                // 友方选中敌方 → 尝试攻击
-                if (sel && sel.team === "friendly" && combatTeam === "enemy") {
-                    const actor = getUnit("friendly", sel.id);
-                    if (actor && attemptPlayerAttack(actor, combatUnit)) {
+            // ==================== 新特性：技能模式优先处理 ====================
+            if (STATE.selectedSkill) {
+                const { combatUnit, combatTeam } = getCellContent(row, col);
+                if (combatTeam === "enemy") {
+                    const actor = getUnit("friendly", STATE.selected.id);
+                    const skillId = STATE.selectedSkill;
+                    const skill = GAME_CONFIG.SKILLS[skillId];
+                    if (actor && skill && isInRange(actor, row, col, skill.range)) {
+                        performSkill(actor, skillId, combatUnit);
+                        actor.currentMana -= skill.manaCost;
+                        actor.hasAttacked = true;   // 技能视为一次攻击行动
+                        STATE.selectedSkill = null;
                         renderBoard();
                         updateSelectedPanel();
                         updateAllLists();
@@ -578,12 +694,43 @@
                         return;
                     }
                 }
-                // 否则选中该单位
+                // 点击非敌方或范围外 → 取消技能
+                STATE.selectedSkill = null;
+                renderBoard();
+                updateSelectedPanel();
+                return;
+            }
+
+            // ==================== 原有逻辑 ====================
+            const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
+            const sel = STATE.selected;
+
+            if (combatUnit) {
+                if (sel && sel.team === combatTeam && sel.id === combatUnit.id) {
+                    deselectUnit();
+                    return;
+                }
+                if (sel && sel.team === "friendly" && combatTeam === "enemy") {
+                    const actor = getUnit("friendly", sel.id);
+                    if (actor && !actor.hasAttacked) {
+                        const effectiveAtk = actor.forestModifier 
+                            ? Math.max(1, GAME_CONFIG.UNIT_TYPES[actor.type].atkRange - 1) 
+                            : GAME_CONFIG.UNIT_TYPES[actor.type].atkRange;
+                        if (isInRange(actor, row, col, effectiveAtk)) {
+                            performAttack(actor, combatUnit);
+                            actor.hasAttacked = true;
+                            renderBoard();
+                            updateSelectedPanel();
+                            updateAllLists();
+                            checkGameOver();
+                            return;
+                        }
+                    }
+                }
                 selectUnit(combatTeam, combatUnit.id);
                 return;
             }
 
-            // 2. 点击地形或空地（尝试移动）
             if (sel && sel.team === "friendly") {
                 const unit = getUnit("friendly", sel.id);
                 if (unit && attemptPlayerMove(unit, row, col)) {
@@ -593,7 +740,6 @@
                 }
             }
 
-            // 3. 未移动成功 → 处理地形选中 / 取消选中
             if (terrainUnit) {
                 if (sel && sel.team === "terrain" && sel.id === terrainUnit.id) {
                     deselectUnit();
@@ -701,8 +847,10 @@
                     u.remainingMove = config.moveRange;
                     u.hasAttacked = false;
                     u.forestModifier = false;
+                    u.currentMana = u.maxMana;   // 每回合恢复满蓝量
                 }
             });
+            STATE.selectedSkill = null;
             renderBoard();
             updateUI();
             updateSelectedPanel();
@@ -716,7 +864,7 @@
         }
 
         /**
-         * ====================== UI 更新模块 ======================
+         * ====================== UI 更新模块（新增技能面板 + 蓝量） ======================
          */
         function updateSelectedPanel() {
             const panel = document.getElementById("selected-panel");
@@ -740,6 +888,7 @@
             if (isTerrain) {
                 document.getElementById("selected-team").innerHTML = `<span class="bg-slate-400 text-white px-3 py-0.5 rounded-full text-xs">地形</span>`;
                 document.getElementById("unit-stats").classList.add("hidden");
+                document.getElementById("skill-selection").classList.add("hidden");
                 document.getElementById("terrain-desc").classList.remove("hidden");
                 document.getElementById("terrain-desc-text").innerHTML = config.desc;
             } else {
@@ -757,11 +906,61 @@
                 document.getElementById("selected-atk").textContent = config.atk;
                 document.getElementById("selected-def").textContent = config.def;
 
+                // 蓝量
+                document.getElementById("selected-mana").innerHTML = `<span class="text-cyan-400">${entity.currentMana}</span> / ${entity.maxMana}`;
+
                 const remaining = STATE.selected.team === "friendly" ? entity.remainingMove : config.moveRange;
                 document.getElementById("selected-remaining-move").innerHTML = `<span class="text-emerald-400">${remaining}</span> / ${config.moveRange}`;
 
                 const effectiveAtk = entity.forestModifier ? Math.max(1, config.atkRange - 1) : config.atkRange;
                 document.getElementById("selected-range").innerHTML = `<span class="text-rose-400">${effectiveAtk}</span>`;
+
+                // ==================== 技能面板逻辑 ====================
+                const skillDiv = document.getElementById("skill-selection");
+                const skillsList = document.getElementById("skills-list");
+                if (STATE.selected.team === "friendly" && !entity.hasAttacked) {
+                    skillDiv.classList.remove("hidden");
+                    skillsList.innerHTML = "";
+
+                    // 普通技能
+                    (config.normalSkills || []).forEach(skillId => {
+                        const skill = GAME_CONFIG.SKILLS[skillId];
+                        if (!skill) return;
+                        const canUse = entity.currentMana >= skill.manaCost;
+                        const btn = document.createElement("button");
+                        btn.className = `flex items-center gap-3 px-4 py-3 rounded-2xl text-left w-full ${canUse ? "bg-cyan-900/40 hover:bg-cyan-800 text-cyan-200" : "bg-slate-800/50 text-slate-400 cursor-not-allowed"}`;
+                        btn.innerHTML = `
+                            <span class="text-3xl">${skill.emoji}</span>
+                            <div class="flex-1">
+                                <div class="font-bold">${skill.name}</div>
+                                <div class="text-[10px] text-cyan-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span></div>
+                            </div>
+                        `;
+                        if (canUse) btn.onclick = () => activateSkill(skillId);
+                        skillsList.appendChild(btn);
+                    });
+
+                    // 终极技能（特殊样式）
+                    if (config.ultSkill) {
+                        const skill = GAME_CONFIG.SKILLS[config.ultSkill];
+                        if (skill) {
+                            const canUse = entity.currentMana >= skill.manaCost;
+                            const btn = document.createElement("button");
+                            btn.className = `flex items-center gap-3 px-4 py-3 rounded-2xl text-left w-full border-2 border-amber-400 ${canUse ? "bg-amber-900/30 hover:bg-amber-800 text-amber-200" : "bg-slate-800/50 text-slate-400 cursor-not-allowed"}`;
+                            btn.innerHTML = `
+                                <span class="text-3xl">${skill.emoji}</span>
+                                <div class="flex-1">
+                                    <div class="font-bold">【终极】${skill.name}</div>
+                                    <div class="text-[10px] text-amber-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span></div>
+                                </div>
+                            `;
+                            if (canUse) btn.onclick = () => activateSkill(config.ultSkill);
+                            skillsList.appendChild(btn);
+                        }
+                    }
+                } else {
+                    skillDiv.classList.add("hidden");
+                }
             }
             panel.classList.remove("hidden");
         }
@@ -829,21 +1028,21 @@
 
         /**
          * ====================== 重置游戏 ======================
-         * 使用 GAME_CONFIG 初始化，完全解耦
          */
         function resetGame() {
-            STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(base => createCombatUnit(base, "friendly"));
-            STATE.enemyUnits = GAME_CONFIG.INITIAL.enemy.map(base => createCombatUnit(base, "enemy"));
+            STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(createCombatUnit);
+            STATE.enemyUnits = GAME_CONFIG.INITIAL.enemy.map(createCombatUnit);
             STATE.terrainUnits = GAME_CONFIG.INITIAL.terrain.map(base => ({ ...base }));
 
             STATE.currentTurn = "player";
             STATE.turnCount = 1;
             STATE.selected = null;
+            STATE.selectedSkill = null;
 
             document.getElementById("log-container").innerHTML = "";
             addLog("🎮 新一局开始！友方 2 单位 vs 敌方 2 单位", "emerald");
             addLog("地图上已生成 <span class='text-amber-300'>山峰、河流、森林</span> 地形", "amber");
-            addLog("点击任意单位/地形可查看属性与范围", "emerald");
+            addLog("点击单位可选择技能（攻击后无法再行动）", "cyan");
 
             renderBoard();
             updateAllLists();
