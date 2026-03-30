@@ -130,7 +130,7 @@
                 </div>
                 <div id="phase-text" class="text-[10px] text-emerald-300 mt-1 tracking-widest">多次移动 + 攻击/技能1次 • 平滑动画 • 独立单位编辑器</div>
             </div>
-            
+
             <div class="flex items-center gap-3">
                 <button onclick="endPlayerTurn()" 
                         id="end-turn-btn"
@@ -400,6 +400,14 @@
             const terrainUnit = STATE.terrainUnits.find(t => t.row === row && t.col === col);
             return { combatUnit, combatTeam, terrainUnit };
         }
+        
+        /**
+         * 强制刷新动画层（防止残留）
+         */
+        function clearAnimationOverlay() {
+            const overlay = document.getElementById("animation-overlay");
+            if (overlay) overlay.innerHTML = "";
+        }
 
         /* ====================== 棋盘渲染（保持不变 + 编辑高亮） ====================== */
         function renderBoard() {
@@ -429,9 +437,15 @@
                     }
 
                     if (STATE.editMode && STATE.editingUnit) {
-                        const isEditing = (STATE.editingUnit.team === combatTeam && STATE.editingUnit.id === (combatUnit ? combatUnit.id : null)) ||
-                                         (STATE.editingUnit.team === "terrain" && terrainUnit && STATE.editingUnit.id === terrainUnit.id);
-                        if (isEditing) cell.classList.add("highlight-edit");
+                        const isEditing = 
+                            (STATE.editingUnit.team === combatTeam && STATE.editingUnit.id === (combatUnit ? combatUnit.id : null)) ||
+                            (STATE.editingUnit.team === "terrain" && terrainUnit && STATE.editingUnit.id === terrainUnit.id);
+                        
+                        if (isEditing) {
+                            cell.classList.add("highlight-edit");
+                            // 增强视觉反馈
+                            cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.7) inset";
+                        }
                     }
 
                     cell.addEventListener("click", () => handleCellClick(r, c));
@@ -745,6 +759,7 @@
             document.getElementById("selected-panel").classList.remove("hidden");
             renderBoard();
             addLog("✅ 已退出编辑模式", "emerald");
+            clearAnimationOverlay();
         }
 
         function handleEditClick(row, col) {
@@ -1099,14 +1114,32 @@
             // 已由 createNewUnitHere 处理
         }
 
-        /* ====================== 动画系统（已修复定位问题） ====================== */
+        /* ====================== 动画系统（最终版 · 完美居中 · 无偏移） ====================== */
         function getCellCenter(row, col) {
-            const board = document.getElementById("board");
-            const rect = board.getBoundingClientRect();
-            const cellSize = rect.width / 10;
-            const x = rect.left + col * cellSize + cellSize / 2;
-            const y = rect.top + row * cellSize + cellSize / 2;
-            return { x, y };
+            // 直接查找当前渲染的格子元素（data-row 和 data-col 是 renderBoard() 里加的）
+            const cell = document.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
+            if (!cell) {
+                console.warn(`[动画] 找不到格子 ${row},${col}`);
+                return { x: 0, y: 0 };
+            }
+
+            const rect = cell.getBoundingClientRect();
+            
+            return {
+                x: Math.round(rect.left + rect.width / 2),
+                y: Math.round(rect.top + rect.height / 2)
+            };
+        }
+
+        function createFlyer(emoji, size = "2.6rem", z = 60) {
+            const flyer = document.createElement("div");
+            flyer.style.position = "absolute";
+            flyer.style.fontSize = size;
+            flyer.style.zIndex = z;
+            flyer.style.pointerEvents = "none";
+            flyer.style.transition = "all 0ms linear"; // 初始关闭过渡
+            flyer.textContent = emoji;
+            return flyer;
         }
 
         function animateMove(fromRow, fromCol, toRow, toCol, emoji) {
@@ -1114,25 +1147,26 @@
             const start = getCellCenter(fromRow, fromCol);
             const end = getCellCenter(toRow, toCol);
 
-            const flyer = document.createElement("div");
-            flyer.style.position = "absolute";
-            flyer.style.left = `${start.x - 30}px`;
-            flyer.style.top = `${start.y - 30}px`;
-            flyer.style.fontSize = "2.5rem";
-            flyer.style.transition = "all 600ms cubic-bezier(0.25, 0.1, 0.25, 1)";
-            flyer.style.zIndex = "50";
-            flyer.textContent = emoji;
+            const flyer = createFlyer(emoji, "2.65rem", 65);
+            flyer.style.left = `${start.x}px`;
+            flyer.style.top = `${start.y}px`;
+            flyer.style.transform = "translate(-50%, -50%)";
+            flyer.style.filter = "drop-shadow(0 12px 18px rgb(16 185 129 / 0.7))";
             overlay.appendChild(flyer);
 
-            setTimeout(() => {
-                flyer.style.left = `${end.x - 30}px`;
-                flyer.style.top = `${end.y - 30}px`;
-            }, 10);
+            // 触发过渡
+            requestAnimationFrame(() => {
+                flyer.style.transition = "all 580ms cubic-bezier(0.34, 1.56, 0.64, 1)";
+                flyer.style.left = `${end.x}px`;
+                flyer.style.top = `${end.y}px`;
+            });
 
             setTimeout(() => {
+                flyer.style.transition = "all 220ms ease";
                 flyer.style.opacity = "0";
-                setTimeout(() => flyer.remove(), 300);
-            }, 650);
+                flyer.style.transform = "translate(-50%, -50%) scale(0.65)";
+                setTimeout(() => flyer.remove(), 250);
+            }, 620);
         }
 
         function animateMeleeBump(attackerRow, attackerCol, defenderRow, defenderCol, emoji) {
@@ -1140,29 +1174,27 @@
             const start = getCellCenter(attackerRow, attackerCol);
             const end = getCellCenter(defenderRow, defenderCol);
 
-            const flyer = document.createElement("div");
-            flyer.style.position = "absolute";
-            flyer.style.left = `${start.x - 30}px`;
-            flyer.style.top = `${start.y - 30}px`;
-            flyer.style.fontSize = "2.5rem";
-            flyer.style.transition = "all 400ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
-            flyer.style.zIndex = "50";
-            flyer.textContent = emoji;
+            const flyer = createFlyer(emoji, "2.8rem", 65);
+            flyer.style.left = `${start.x}px`;
+            flyer.style.top = `${start.y}px`;
+            flyer.style.transform = "translate(-50%, -50%)";
             overlay.appendChild(flyer);
 
-            setTimeout(() => {
-                flyer.style.left = `${end.x - 30}px`;
-                flyer.style.top = `${end.y - 30}px`;
-                flyer.style.transform = "scale(1.3)";
-            }, 10);
+            requestAnimationFrame(() => {
+                flyer.style.transition = "all 380ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
+                flyer.style.left = `${end.x}px`;
+                flyer.style.top = `${end.y}px`;
+                flyer.style.transform = "translate(-50%, -50%) scale(1.38)";
+            });
 
             setTimeout(() => {
-                flyer.style.left = `${start.x - 30}px`;
-                flyer.style.top = `${start.y - 30}px`;
-                flyer.style.transform = "scale(1)";
-            }, 450);
+                flyer.style.transition = "all 320ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
+                flyer.style.left = `${start.x}px`;
+                flyer.style.top = `${start.y}px`;
+                flyer.style.transform = "translate(-50%, -50%) scale(1)";
+            }, 420);
 
-            setTimeout(() => flyer.remove(), 900);
+            setTimeout(() => flyer.remove(), 980);
         }
 
         function animateProjectile(startRow, startCol, endRow, endCol, emoji) {
@@ -1170,25 +1202,24 @@
             const start = getCellCenter(startRow, startCol);
             const end = getCellCenter(endRow, endCol);
 
-            const flyer = document.createElement("div");
-            flyer.style.position = "absolute";
-            flyer.style.left = `${start.x - 20}px`;
-            flyer.style.top = `${start.y - 20}px`;
-            flyer.style.fontSize = "2rem";
-            flyer.style.transition = "all 700ms cubic-bezier(0.25, 0.46, 0.45, 0.94)";
-            flyer.style.zIndex = "50";
-            flyer.textContent = emoji;
+            const flyer = createFlyer(emoji, "2.2rem", 55);
+            flyer.style.left = `${start.x}px`;
+            flyer.style.top = `${start.y}px`;
+            flyer.style.transform = "translate(-50%, -50%)";
+            flyer.style.filter = "drop-shadow(6px 6px 12px rgb(165 243 252))";
             overlay.appendChild(flyer);
 
-            setTimeout(() => {
-                flyer.style.left = `${end.x - 20}px`;
-                flyer.style.top = `${end.y - 20}px`;
-            }, 10);
+            requestAnimationFrame(() => {
+                flyer.style.transition = "all 680ms cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+                flyer.style.left = `${end.x}px`;
+                flyer.style.top = `${end.y}px`;
+            });
 
             setTimeout(() => {
                 flyer.style.opacity = "0";
+                flyer.style.transform = "translate(-50%, -50%) scale(0.75)";
                 setTimeout(() => flyer.remove(), 200);
-            }, 750);
+            }, 720);
         }
 
         function showSkillNamePopup(name, row, col) {
@@ -1197,27 +1228,29 @@
 
             const popup = document.createElement("div");
             popup.style.position = "absolute";
-            popup.style.left = `${center.x - 80}px`;
-            popup.style.top = `${center.y - 60}px`;
-            popup.style.background = "rgba(165, 243, 252, 0.95)";
+            popup.style.left = `${center.x}px`;
+            popup.style.top = `${center.y}px`;
+            popup.style.transform = "translate(-50%, -50%)";
+            popup.style.background = "rgba(165, 243, 252, 0.96)";
             popup.style.color = "#0f172a";
-            popup.style.padding = "6px 16px";
+            popup.style.padding = "8px 20px";
             popup.style.borderRadius = "9999px";
-            popup.style.fontSize = "14px";
+            popup.style.fontSize = "15px";
             popup.style.fontWeight = "700";
             popup.style.whiteSpace = "nowrap";
-            popup.style.boxShadow = "0 10px 15px -3px rgb(165 243 252)";
+            popup.style.boxShadow = "0 0 25px 8px rgb(165 243 252)";
             popup.style.opacity = "0";
-            popup.style.transition = "all 300ms ease";
+            popup.style.transition = "all 280ms cubic-bezier(0.4, 0, 0.2, 1)";
             popup.textContent = name;
             overlay.appendChild(popup);
 
-            setTimeout(() => popup.style.opacity = "1", 10);
+            requestAnimationFrame(() => popup.style.opacity = "1");
+
             setTimeout(() => {
                 popup.style.opacity = "0";
-                popup.style.transform = "translateY(-20px)";
-                setTimeout(() => popup.remove(), 300);
-            }, 900);
+                popup.style.transform = "translate(-50%, -70%)";
+                setTimeout(() => popup.remove(), 320);
+            }, 1100);
         }
 
         /* ====================== UI 更新（保持不变） ====================== */
@@ -1574,6 +1607,7 @@
             updateUI();
             updateSelectedPanel();
             exitEditMode();
+            clearAnimationOverlay();
         }
 
         function initGame() {
