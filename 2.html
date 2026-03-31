@@ -343,6 +343,12 @@
             previewTimeout: null
         };
 
+        /**
+         * 【性能优化】格子 DOM 缓存
+         * 所有格子只创建一次，后续只更新属性
+         */
+        let cellCache = new Map(); // key: `${row},${col}` → DOM 元素
+
         /* ====================== 辅助函数（保持不变） ====================== */
         function addLog(message, color = "slate") {
             const container = document.getElementById("log-container");
@@ -421,50 +427,86 @@
                 }));
         }
 
-        /* ====================== 棋盘渲染（保持不变 + 编辑高亮） ====================== */
+        /* ====================== 棋盘渲染（性能优化版 · 缓存 + 差异更新） ====================== */
         function renderBoard() {
             const boardEl = document.getElementById("board");
-            boardEl.innerHTML = "";
-            for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
-                for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
-                    const cell = document.createElement("div");
-                    cell.className = `grid-cell unit-cell w-[62px] h-[62px] bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
-                    cell.dataset.row = r;
-                    cell.dataset.col = c;
 
-                    const { combatUnit, combatTeam, terrainUnit } = getCellContent(r, c);
+            // 首次初始化：创建所有 100 个格子并绑定事件
+            if (cellCache.size === 0) {
+                boardEl.innerHTML = ""; // 只在第一次清空
+                for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
+                    for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
+                        const cell = document.createElement("div");
+                        cell.className = `grid-cell unit-cell w-[62px] h-[62px] bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
+                        cell.dataset.row = r;
+                        cell.dataset.col = c;
+                        cell.addEventListener("click", () => handleCellClick(r, c)); // 只绑定一次
 
-                    if (combatUnit) {
-                        cell.setAttribute("data-combat", combatUnit.emoji);
-                        cell.style.background = combatTeam === "friendly" ? "rgba(16, 185, 129, 0.18)" : "rgba(239, 68, 68, 0.18)";
+                        const key = `${r},${c}`;
+                        cellCache.set(key, cell);
+                        boardEl.appendChild(cell);
                     }
-                    if (terrainUnit) {
-                        cell.setAttribute("data-terrain", terrainUnit.emoji || "❓");
-                        if (!combatUnit) {
-                            const type = terrainUnit.type;
-                            if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
-                            else if (type === "river") cell.style.background = "rgba(56, 189, 248, 0.28)";
-                            else if (type === "forest") cell.style.background = "rgba(134, 239, 172, 0.28)";
-                        }
-                    }
-
-                    if (STATE.editMode && STATE.editingUnit) {
-                        const isEditing = 
-                            (STATE.editingUnit.team === combatTeam && STATE.editingUnit.id === (combatUnit ? combatUnit.id : null)) ||
-                            (STATE.editingUnit.team === "terrain" && terrainUnit && STATE.editingUnit.id === terrainUnit.id);
-                        
-                        if (isEditing) {
-                            cell.classList.add("highlight-edit");
-                            // 增强视觉反馈
-                            cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.7) inset";
-                        }
-                    }
-
-                    cell.addEventListener("click", () => handleCellClick(r, c));
-                    boardEl.appendChild(cell);
                 }
             }
+
+            // 后续渲染：只更新每个格子的内容、背景、高亮
+            for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
+                for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
+                    const key = `${r},${c}`;
+                    const cell = cellCache.get(key);
+                    if (cell) updateCellContent(cell, r, c);
+                }
+            }
+
+            // 高亮范围（保持原有逻辑）
             if (STATE.selected) highlightRanges();
+        }
+
+        /**
+         * 【性能优化】单格内容差异更新
+         * 只修改需要变化的部分，极大减少 DOM 操作
+         */
+        function updateCellContent(cell, row, col) {
+            const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
+
+            // 1. 清空旧高亮（编辑模式除外）
+            cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap", "highlight-skill", "highlight-edit");
+
+            // 2. 战斗单位显示
+            if (combatUnit) {
+                cell.setAttribute("data-combat", combatUnit.emoji);
+                cell.style.background = combatTeam === "friendly" 
+                    ? "rgba(16, 185, 129, 0.18)" 
+                    : "rgba(239, 68, 68, 0.18)";
+            } else {
+                cell.removeAttribute("data-combat");
+                cell.style.background = ""; // 恢复默认
+            }
+
+            // 3. 地形显示
+            if (terrainUnit) {
+                cell.setAttribute("data-terrain", terrainUnit.emoji || "❓");
+                if (!combatUnit) {
+                    const type = terrainUnit.type;
+                    if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
+                    else if (type === "river") cell.style.background = "rgba(56, 189, 248, 0.28)";
+                    else if (type === "forest") cell.style.background = "rgba(134, 239, 172, 0.28)";
+                }
+            } else {
+                cell.removeAttribute("data-terrain");
+            }
+
+            // 4. 编辑模式高亮（增强版）
+            if (STATE.editMode && STATE.editingUnit) {
+                const isEditing = 
+                    (STATE.editingUnit.team === combatTeam && STATE.editingUnit.id === (combatUnit ? combatUnit.id : null)) ||
+                    (STATE.editingUnit.team === "terrain" && terrainUnit && STATE.editingUnit.id === terrainUnit.id);
+                
+                if (isEditing) {
+                    cell.classList.add("highlight-edit");
+                    cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.7) inset";
+                }
+            }
         }
 
         /* ====================== 高亮逻辑（保持不变） ====================== */
@@ -1666,6 +1708,7 @@ function showSkillNamePopup(name, row, col) {
             updateSelectedPanel();
             exitEditMode();
             clearAnimationOverlay();
+            cellCache.clear(); // 重开一局时重置缓存
         }
 
         function initGame() {
