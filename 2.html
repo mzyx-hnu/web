@@ -27,7 +27,16 @@
         .grid-cell {
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            aspect-ratio: 1/1;
+            /* 增强格子边缘视觉分离度 */
+            border: 2px solid rgba(148, 163, 184, 0.15);
         }
+
         .grid-cell:hover {
             filter: brightness(1.15);
         }
@@ -64,7 +73,7 @@
 
         .unit-cell::before {
             content: attr(data-combat);
-            font-size: 2.25rem;
+            font-size: clamp(1.8rem, 4.5vw, 2.25rem); /* 移动端自动缩放 */
             position: absolute;
             top: 4px;
             left: 8px;
@@ -72,9 +81,10 @@
             z-index: 20;
             pointer-events: none;
         }
+
         .unit-cell::after {
             content: attr(data-terrain);
-            font-size: 1.8rem;
+            font-size: clamp(1.4rem, 3.5vw, 1.8rem);
             position: absolute;
             bottom: 4px;
             right: 8px;
@@ -184,14 +194,13 @@
                 </button>
             </div>
 
-            <!-- 中间：棋盘（自适应居中） -->
-            <div class="flex-1 flex items-center justify-center relative min-h-[660px]">
-                <div id="board-container" class="relative">
+            <!-- 中间：棋盘（移动端响应式优化版） -->
+            <div class="flex-1 flex items-center justify-center relative min-h-[min(660px,85vh)]">
+                <div id="board-container" class="relative w-full max-w-[660px] aspect-square mx-auto">
                     <div id="board" 
-                         class="grid grid-cols-10 gap-px bg-slate-700/80 p-3 rounded-3xl shadow-2xl border border-white/10"
-                         style="width: 660px; height: 660px;">
+                        class="grid grid-cols-10 gap-px bg-slate-700/80 p-3 rounded-3xl shadow-2xl border border-white/10 w-full h-full">
                     </div>
-                    <!-- 动画层 -->
+                    <!-- 动画层（fixed 已兼容移动端） -->
                     <div id="animation-overlay" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
                 </div>
             </div>
@@ -427,6 +436,60 @@
                 }));
         }
 
+        /**
+         * 【移动端触屏优化】长按格子 600ms 自动选中/查看详情
+         * 兼容桌面点击（click 事件不受影响）
+         */
+        let longPressTimer = null;
+        let longPressRow = null;
+        let longPressCol = null;
+
+        function addLongPressSupport(cell, row, col) {
+            // 防止重复绑定
+            if (cell.dataset.hasLongPress === "true") return;
+            cell.dataset.hasLongPress = "true";
+
+            // touchstart 开始计时
+            cell.addEventListener("touchstart", (e) => {
+                longPressRow = row;
+                longPressCol = col;
+                longPressTimer = setTimeout(() => {
+                    // 长按触发
+                    handleLongPress(row, col);
+                }, 600); // 600ms 长按阈值
+            });
+
+            // touchend / touchcancel 取消计时
+            const cancel = () => {
+                if (longPressTimer) clearTimeout(longPressTimer);
+                longPressTimer = null;
+            };
+            cell.addEventListener("touchend", cancel);
+            cell.addEventListener("touchcancel", cancel);
+            cell.addEventListener("touchmove", cancel); // 手指移动也取消
+        }
+
+        /**
+         * 长按后的实际处理逻辑
+         */
+        function handleLongPress(row, col) {
+            const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
+            
+            if (combatUnit) {
+                selectUnit(combatTeam, combatUnit.id);
+                // 移动端额外振动反馈（可选）
+                if (navigator.vibrate) navigator.vibrate(30);
+            } else if (terrainUnit) {
+                selectUnit("terrain", terrainUnit.id);
+                if (navigator.vibrate) navigator.vibrate(20);
+            } else {
+                // 空白格长按：仅在编辑模式下触发新增提示
+                if (STATE.editMode) {
+                    addLog(`📍 长按空白格 (${row},${col}) → 可新增单位`, "purple");
+                }
+            }
+        }
+
         /* ====================== 棋盘渲染（性能优化版 · 缓存 + 差异更新） ====================== */
         function renderBoard() {
             const boardEl = document.getElementById("board");
@@ -437,7 +500,7 @@
                 for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
                     for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
                         const cell = document.createElement("div");
-                        cell.className = `grid-cell unit-cell w-[62px] h-[62px] bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
+                        cell.className = `grid-cell unit-cell bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
                         cell.dataset.row = r;
                         cell.dataset.col = c;
                         cell.addEventListener("click", () => handleCellClick(r, c)); // 只绑定一次
@@ -506,6 +569,11 @@
                     cell.classList.add("highlight-edit");
                     cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.7) inset";
                 }
+            }
+
+            // 【移动端优化】为每个格子添加长按支持（只绑定一次）
+            if (!cell.dataset.hasLongPress) {
+                addLongPressSupport(cell, row, col);
             }
         }
 
