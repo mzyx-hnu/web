@@ -409,6 +409,18 @@
             if (overlay) overlay.innerHTML = "";
         }
 
+        /**
+         * 获取所有预设地形模板（用于新增/切换地形）
+         */
+        function getTerrainPresets() {
+            return Object.keys(GAME_CONFIG.UNIT_TYPES)
+                .filter(key => GAME_CONFIG.UNIT_TYPES[key].isTerrain)
+                .map(key => ({
+                    type: key,
+                    ...GAME_CONFIG.UNIT_TYPES[key]
+                }));
+        }
+
         /* ====================== 棋盘渲染（保持不变 + 编辑高亮） ====================== */
         function renderBoard() {
             const boardEl = document.getElementById("board");
@@ -762,25 +774,53 @@
             clearAnimationOverlay();
         }
 
+        /**
+         * 编辑模式点击处理（已修复：复制单位 + 空白格高亮bug）
+         */
         function handleEditClick(row, col) {
             const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
 
-            if (combatUnit || terrainUnit) {
+            if (STATE.editingUnit && STATE.editingUnit.pendingCopy) {
+                // 【修复点3】复制单位逻辑：点击空白格后真正复制
+                if (!combatUnit && !terrainUnit) {
+                    const source = getUnit(STATE.editingUnit.team, STATE.editingUnit.sourceId);
+                    if (source) {
+                        const newId = (STATE.editingUnit.team === "friendly" ? "f_copy_" : STATE.editingUnit.team === "enemy" ? "e_copy_" : "t_copy_") + Date.now();
+                        let newUnit;
+                        
+                        if (STATE.editingUnit.team !== "terrain") {
+                            newUnit = { ...source, id: newId, row, col };
+                            if (STATE.editingUnit.team === "friendly") STATE.friendlyUnits.push(newUnit);
+                            else STATE.enemyUnits.push(newUnit);
+                        } else {
+                            newUnit = { ...source, id: newId, row, col };
+                            STATE.terrainUnits.push(newUnit);
+                        }
+                        
+                        addLog(`📋 已复制单位到 (${row},${col})`, "amber");
+                    }
+                }
+                STATE.editingUnit = null; // 复制完成后清除状态
+            } 
+            else if (combatUnit || terrainUnit) {
                 // 选中已有单位/地形
                 const team = combatUnit ? combatTeam : "terrain";
                 const id = combatUnit ? combatUnit.id : terrainUnit.id;
                 const isTerrain = !!terrainUnit;
                 STATE.editingUnit = { team, id, isTerrain, row, col };
-            } else {
-                // 点击空格子 → 进入待新增状态
+            } 
+            else {
+                // 点击空白格 → 待新增
                 STATE.editingUnit = { team: null, id: null, isTerrain: false, pendingAdd: true, row, col };
             }
 
-            renderBoard();           // 触发高亮
+            renderBoard();   // 触发高亮
             renderEditForm();
         }
 
-        /* ====================== 编辑器表单（地形独立界面 + 新增/复制逻辑） ====================== */
+        /**
+         * 编辑器表单渲染（已优化：技能输入框增加标签 + 地形改为预设选择 + 空白格高亮）
+         */
         function renderEditForm() {
             const container = document.getElementById("edit-unit-form");
             if (!STATE.editingUnit) {
@@ -794,7 +834,7 @@
 
             let html = `<div class="space-y-6">`;
 
-            // 空格子新增模式
+            // 空白格新增模式（含复制后的待放置）
             if (isPendingAdd) {
                 html += `
                     <div class="text-center py-8">
@@ -808,32 +848,35 @@
             } 
             // 已选中单位/地形
             else if (unit) {
+                html += `<div class="space-y-6">`;
+
+                // 基本属性（通用）
                 html += `
-                    <div class="space-y-6">
-                        <div>
-                            <div class="text-xs uppercase text-purple-300 mb-2">基本属性</div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs mb-1">图标 (Emoji)</label>
-                                    <div class="flex gap-2 mb-2">
-                                        <button onclick="quickSetEmoji('⚔️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">⚔️</button>
-                                        <button onclick="quickSetEmoji('🏹')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🏹</button>
-                                        <button onclick="quickSetEmoji('🛡️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🛡️</button>
-                                        <button onclick="quickSetEmoji('🔥')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔥</button>
-                                        <button onclick="quickSetEmoji('⛰️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">⛰️</button>
-                                        <button onclick="quickSetEmoji('🌊')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🌊</button>
-                                        <button onclick="quickSetEmoji('🌲')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🌲</button>
-                                        <button onclick="quickSetEmoji('🔵')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔵</button>
-                                        <button onclick="quickSetEmoji('❤️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">❤️</button>
-                                    </div>
-                                    <input id="edit-emoji" type="text" value="${unit.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl text-3xl text-center" maxlength="2">
+                    <div>
+                        <div class="text-xs uppercase text-purple-300 mb-2">基本属性</div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs mb-1">图标 (Emoji)</label>
+                                <div class="flex gap-2 mb-2">
+                                    <!-- 快捷按钮保持不变 -->
+                                    <button onclick="quickSetEmoji('⚔️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">⚔️</button>
+                                    <button onclick="quickSetEmoji('🏹')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🏹</button>
+                                    <button onclick="quickSetEmoji('🛡️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🛡️</button>
+                                    <button onclick="quickSetEmoji('🔥')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔥</button>
+                                    <button onclick="quickSetEmoji('⛰️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">⛰️</button>
+                                    <button onclick="quickSetEmoji('🌊')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🌊</button>
+                                    <button onclick="quickSetEmoji('🌲')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🌲</button>
+                                    <button onclick="quickSetEmoji('🔵')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔵</button>
+                                    <button onclick="quickSetEmoji('❤️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">❤️</button>
                                 </div>
-                                <div>
-                                    <label class="block text-xs mb-1">名称</label>
-                                    <input id="edit-name" type="text" value="${unit.name}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                                </div>
+                                <input id="edit-emoji" type="text" value="${unit.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl text-3xl text-center" maxlength="2">
                             </div>
-                        </div>`;
+                            <div>
+                                <label class="block text-xs mb-1">名称</label>
+                                <input id="edit-name" type="text" value="${unit.name}" class="editor-input w-full px-4 py-3 rounded-2xl">
+                            </div>
+                        </div>
+                    </div>`;
 
                 if (!isTerrain) {
                     html += `
@@ -862,42 +905,15 @@
                             </div>
                         </div>`;
                 } else {
-                    // 地形专用界面
+                    // 【修复点4】地形改为预设选择模式
                     html += `
                         <div>
-                            <label class="block text-xs mb-1">描述</label>
-                            <textarea id="edit-desc" class="editor-input w-full px-4 py-3 rounded-3xl h-20">${unit.desc || ''}</textarea>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs mb-1">不可进入</label>
-                                <select id="edit-impassable" class="editor-input w-full px-4 py-3 rounded-2xl">
-                                    <option value="true" ${unit.impassable ? 'selected' : ''}>是</option>
-                                    <option value="false" ${!unit.impassable ? 'selected' : ''}>否</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs mb-1">临时地形（踩后消失）</label>
-                                <select id="edit-temporary" class="editor-input w-full px-4 py-3 rounded-2xl">
-                                    <option value="true" ${unit.temporary ? 'selected' : ''}>是</option>
-                                    <option value="false" ${!unit.temporary ? 'selected' : ''}>否</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs mb-1">效果类型</label>
-                            <select id="edit-effect" class="editor-input w-full px-4 py-3 rounded-2xl">
-                                <option value="">无</option>
-                                <option value="mana" ${unit.effect === 'mana' ? 'selected' : ''}>回蓝</option>
-                                <option value="heal" ${unit.effect === 'heal' ? 'selected' : ''}>回血</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs mb-1">效果数值</label>
-                            <input id="edit-value" type="number" value="${unit.value || 5}" class="editor-input w-full px-4 py-3 rounded-2xl">
+                            <div class="text-xs uppercase text-purple-300 mb-3">切换地形类型（预设）</div>
+                            <div class="grid grid-cols-2 gap-3" id="terrain-preset-list"></div>
                         </div>`;
                 }
 
+                // 保存/删除/复制按钮
                 html += `
                     <div class="flex gap-3 pt-4 border-t border-white/10">
                         <button onclick="saveCurrentEdit()" class="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-3xl font-bold">保存修改</button>
@@ -909,7 +925,52 @@
             html += `</div>`;
             container.innerHTML = html;
 
+            // 【新增】地形预设渲染
+            if (isTerrain && unit) {
+                renderTerrainPresetList(unit);
+            }
+            // 战斗单位技能列表保持原来逻辑
             if (!isTerrain && !isPendingAdd && unit) renderCurrentNormalSkills();
+        }
+
+        /**
+         * 应用选中的地形预设（切换地形类型）
+         */
+        function applyTerrainPreset(newType) {
+            if (!STATE.editingUnit || !STATE.editingUnit.id) return;
+            const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+            if (!unit) return;
+
+            const template = GAME_CONFIG.UNIT_TYPES[newType];
+            Object.assign(unit, template); // 直接应用完整模板
+            unit.type = newType;
+            unit.id = STATE.editingUnit.id; // 保留原有ID
+
+            addLog(`✅ 地形已切换为 <span class="text-amber-300">${template.emoji} ${template.name}</span>`, "amber");
+            renderEditForm();   // 刷新表单
+            renderBoard();
+        }
+
+        /**
+         * 渲染地形预设选择列表（替换原来的自定义地形字段）
+         */
+        function renderTerrainPresetList(currentUnit) {
+            const container = document.getElementById("terrain-preset-list");
+            if (!container) return;
+            
+            const presets = getTerrainPresets();
+            container.innerHTML = presets.map(p => {
+                const isActive = p.type === currentUnit.type;
+                return `
+                    <button onclick="applyTerrainPreset('${p.type}')" 
+                            class="p-4 rounded-3xl border-2 flex items-center gap-3 transition-all ${isActive ? 'border-purple-400 bg-purple-900/30' : 'border-slate-700 hover:border-slate-400'}">
+                        <span class="text-4xl">${p.emoji}</span>
+                        <div class="text-left">
+                            <div class="font-bold">${p.name}</div>
+                            <div class="text-xs text-slate-400">${p.desc || '无特殊效果'}</div>
+                        </div>
+                    </button>`;
+            }).join('');
         }
 
         function quickSetEmoji(emoji) {
@@ -954,20 +1015,19 @@
         function editExistingSkill(skillId) {
             const skill = GAME_CONFIG.SKILLS[skillId];
             if (!skill) return;
-
             const container = document.getElementById("edit-unit-form");
             const html = `
                 <div class="border border-amber-400/30 rounded-3xl p-5 mb-6">
                     <div class="text-amber-400 font-bold mb-4">编辑技能「${skill.name}」</div>
                     <div class="space-y-4">
-                        <input id="new-skill-emoji" placeholder="图标" value="${skill.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        <input id="new-skill-name" placeholder="技能名称" value="${skill.name}" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <div><label class="block text-xs mb-1">图标</label><input id="new-skill-emoji" value="${skill.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        <div><label class="block text-xs mb-1">技能名称</label><input id="new-skill-name" value="${skill.name}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                         <div class="grid grid-cols-3 gap-4">
-                            <div><input id="new-skill-cost" type="number" value="${skill.manaCost}" placeholder="蓝量" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                            <div><input id="new-skill-range" type="number" value="${skill.range}" placeholder="范围" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                            <div><input id="new-skill-dmg" type="number" value="${skill.damage}" placeholder="伤害" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><label class="block text-xs mb-1">蓝量消耗</label><input id="new-skill-cost" type="number" value="${skill.manaCost}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><label class="block text-xs mb-1">范围</label><input id="new-skill-range" type="number" value="${skill.range}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><label class="block text-xs mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${skill.damage}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                         </div>
-                        <input id="new-skill-desc" placeholder="描述" value="${skill.desc}" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <div><label class="block text-xs mb-1">描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                         <div class="flex gap-3">
                             <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold">保存修改</button>
                             <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold">取消</button>
@@ -990,22 +1050,24 @@
             renderEditForm();
         }
 
-        function showAddSkillForm() {
+        function showAddSkillForm(skillId) {
+            const skill = GAME_CONFIG.SKILLS[skillId];
+            if (!skill) return;
             const container = document.getElementById("edit-unit-form");
             const html = `
-                <div class="border border-purple-400/30 rounded-3xl p-5 mb-6">
-                    <div class="text-purple-400 font-bold mb-4">新增技能</div>
+                <div class="border border-amber-400/30 rounded-3xl p-5 mb-6">
+                    <div class="text-amber-400 font-bold mb-4">编辑技能「${skill.name}」</div>
                     <div class="space-y-4">
-                        <input id="new-skill-emoji" placeholder="图标" value="✨" class="editor-input w-full px-4 py-3 rounded-2xl">
-                        <input id="new-skill-name" placeholder="技能名称" value="自定义技能" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <div><label class="block text-xs mb-1">图标</label><input id="new-skill-emoji" value="${skill.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                        <div><label class="block text-xs mb-1">技能名称</label><input id="new-skill-name" value="${skill.name}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                         <div class="grid grid-cols-3 gap-4">
-                            <div><input id="new-skill-cost" type="number" value="4" placeholder="蓝量" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                            <div><input id="new-skill-range" type="number" value="2" placeholder="范围" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                            <div><input id="new-skill-dmg" type="number" value="12" placeholder="伤害" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><label class="block text-xs mb-1">蓝量消耗</label><input id="new-skill-cost" type="number" value="${skill.manaCost}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><label class="block text-xs mb-1">范围</label><input id="new-skill-range" type="number" value="${skill.range}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                            <div><label class="block text-xs mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${skill.damage}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                         </div>
-                        <input id="new-skill-desc" placeholder="描述" value="自定义新技能" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <div><label class="block text-xs mb-1">描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
                         <div class="flex gap-3">
-                            <button onclick="confirmAddSkill()" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 rounded-2xl font-bold">确认添加</button>
+                            <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold">保存修改</button>
                             <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold">取消</button>
                         </div>
                     </div>
