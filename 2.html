@@ -1114,144 +1114,140 @@
             // 已由 createNewUnitHere 处理
         }
 
-        /* ====================== 动画系统（最终版 · 完美居中 · 无偏移） ====================== */
-        function getCellCenter(row, col) {
-            // 直接查找当前渲染的格子元素（data-row 和 data-col 是 renderBoard() 里加的）
-            const cell = document.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
-            if (!cell) {
-                console.warn(`[动画] 找不到格子 ${row},${col}`);
-                return { x: 0, y: 0 };
-            }
+/**
+ * 【高DPI完美版】getCellCenter - 专为 Chrome 150%网页+200%系统缩放 优化
+ */
+function getCellCenter(row, col) {
+    const cell = document.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
+    if (!cell) {
+        console.warn(`[动画] 找不到格子 ${row},${col}`);
+        return { x: 0, y: 0 };
+    }
+    const rect = cell.getBoundingClientRect();
+    return {
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2)
+    };
+}
 
-            const rect = cell.getBoundingClientRect();
-            
-            return {
-                x: Math.round(rect.left + rect.width / 2),
-                y: Math.round(rect.top + rect.height / 2)
-            };
-        }
+/**
+ * 【高DPI完美版】动画系统 - 使用 position: fixed + 双 requestAnimationFrame
+ */
+function createFlyer(emoji, size = "2.65rem", z = 9999) {
+    const flyer = document.createElement("div");
+    flyer.style.position = "fixed";           // ← 关键修改：fixed 而不是 absolute
+    flyer.style.fontSize = size;
+    flyer.style.zIndex = z;
+    flyer.style.pointerEvents = "none";
+    flyer.style.willChange = "transform, opacity";   // 强制 GPU 加速
+    flyer.style.transform = "translate(-50%, -50%)";
+    flyer.textContent = emoji;
+    document.body.appendChild(flyer);         // ← 直接挂到 body，绕过所有容器缩放
+    return flyer;
+}
 
-        function createFlyer(emoji, size = "2.6rem", z = 60) {
-            const flyer = document.createElement("div");
-            flyer.style.position = "absolute";
-            flyer.style.fontSize = size;
-            flyer.style.zIndex = z;
-            flyer.style.pointerEvents = "none";
-            flyer.style.transition = "all 0ms linear"; // 初始关闭过渡
-            flyer.textContent = emoji;
-            return flyer;
-        }
+function animateMove(fromRow, fromCol, toRow, toCol, emoji) {
+    const start = getCellCenter(fromRow, fromCol);
+    const end = getCellCenter(toRow, toCol);
+    const flyer = createFlyer(emoji, "2.7rem", 9999);
+    flyer.style.left = `${start.x}px`;
+    flyer.style.top = `${start.y}px`;
+    flyer.style.filter = "drop-shadow(0 12px 20px rgb(16 185 129))";
 
-        function animateMove(fromRow, fromCol, toRow, toCol, emoji) {
-            const overlay = document.getElementById("animation-overlay");
-            const start = getCellCenter(fromRow, fromCol);
-            const end = getCellCenter(toRow, toCol);
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {   // 双帧强制重绘，解决高缩放下首次渲染偏差
+            flyer.style.transition = "all 580ms cubic-bezier(0.34, 1.56, 0.64, 1)";
+            flyer.style.left = `${end.x}px`;
+            flyer.style.top = `${end.y}px`;
+        });
+    });
 
-            const flyer = createFlyer(emoji, "2.65rem", 65);
-            flyer.style.left = `${start.x}px`;
-            flyer.style.top = `${start.y}px`;
-            flyer.style.transform = "translate(-50%, -50%)";
-            flyer.style.filter = "drop-shadow(0 12px 18px rgb(16 185 129 / 0.7))";
-            overlay.appendChild(flyer);
+    setTimeout(() => {
+        flyer.style.transition = "all 220ms ease";
+        flyer.style.opacity = "0";
+        flyer.style.transform = "translate(-50%, -50%) scale(0.65)";
+        setTimeout(() => flyer.remove(), 280);
+    }, 630);
+}
 
-            // 触发过渡
-            requestAnimationFrame(() => {
-                flyer.style.transition = "all 580ms cubic-bezier(0.34, 1.56, 0.64, 1)";
-                flyer.style.left = `${end.x}px`;
-                flyer.style.top = `${end.y}px`;
-            });
+function animateMeleeBump(attackerRow, attackerCol, defenderRow, defenderCol, emoji) {
+    const start = getCellCenter(attackerRow, attackerCol);
+    const end = getCellCenter(defenderRow, defenderCol);
+    const flyer = createFlyer(emoji, "2.85rem", 9999);
+    flyer.style.left = `${start.x}px`;
+    flyer.style.top = `${start.y}px`;
 
-            setTimeout(() => {
-                flyer.style.transition = "all 220ms ease";
-                flyer.style.opacity = "0";
-                flyer.style.transform = "translate(-50%, -50%) scale(0.65)";
-                setTimeout(() => flyer.remove(), 250);
-            }, 620);
-        }
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            flyer.style.transition = "all 380ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
+            flyer.style.left = `${end.x}px`;
+            flyer.style.top = `${end.y}px`;
+            flyer.style.transform = "translate(-50%, -50%) scale(1.42)";
+        });
+    });
 
-        function animateMeleeBump(attackerRow, attackerCol, defenderRow, defenderCol, emoji) {
-            const overlay = document.getElementById("animation-overlay");
-            const start = getCellCenter(attackerRow, attackerCol);
-            const end = getCellCenter(defenderRow, defenderCol);
+    setTimeout(() => {
+        flyer.style.transition = "all 340ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
+        flyer.style.left = `${start.x}px`;
+        flyer.style.top = `${start.y}px`;
+        flyer.style.transform = "translate(-50%, -50%) scale(1)";
+    }, 430);
 
-            const flyer = createFlyer(emoji, "2.8rem", 65);
-            flyer.style.left = `${start.x}px`;
-            flyer.style.top = `${start.y}px`;
-            flyer.style.transform = "translate(-50%, -50%)";
-            overlay.appendChild(flyer);
+    setTimeout(() => flyer.remove(), 1050);
+}
 
-            requestAnimationFrame(() => {
-                flyer.style.transition = "all 380ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
-                flyer.style.left = `${end.x}px`;
-                flyer.style.top = `${end.y}px`;
-                flyer.style.transform = "translate(-50%, -50%) scale(1.38)";
-            });
+function animateProjectile(startRow, startCol, endRow, endCol, emoji) {
+    const start = getCellCenter(startRow, startCol);
+    const end = getCellCenter(endRow, endCol);
+    const flyer = createFlyer(emoji, "2.25rem", 9998);
+    flyer.style.left = `${start.x}px`;
+    flyer.style.top = `${start.y}px`;
+    flyer.style.filter = "drop-shadow(8px 8px 16px rgb(165 243 252))";
 
-            setTimeout(() => {
-                flyer.style.transition = "all 320ms cubic-bezier(0.68, -0.55, 0.27, 1.55)";
-                flyer.style.left = `${start.x}px`;
-                flyer.style.top = `${start.y}px`;
-                flyer.style.transform = "translate(-50%, -50%) scale(1)";
-            }, 420);
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            flyer.style.transition = "all 680ms cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+            flyer.style.left = `${end.x}px`;
+            flyer.style.top = `${end.y}px`;
+        });
+    });
 
-            setTimeout(() => flyer.remove(), 980);
-        }
+    setTimeout(() => {
+        flyer.style.opacity = "0";
+        flyer.style.transform = "translate(-50%, -50%) scale(0.7)";
+        setTimeout(() => flyer.remove(), 220);
+    }, 730);
+}
 
-        function animateProjectile(startRow, startCol, endRow, endCol, emoji) {
-            const overlay = document.getElementById("animation-overlay");
-            const start = getCellCenter(startRow, startCol);
-            const end = getCellCenter(endRow, endCol);
+function showSkillNamePopup(name, row, col) {
+    const center = getCellCenter(row, col);
+    const popup = document.createElement("div");
+    popup.style.position = "fixed";
+    popup.style.left = `${center.x}px`;
+    popup.style.top = `${center.y}px`;
+    popup.style.transform = "translate(-50%, -50%)";
+    popup.style.background = "rgba(165, 243, 252, 0.96)";
+    popup.style.color = "#0f172a";
+    popup.style.padding = "8px 22px";
+    popup.style.borderRadius = "9999px";
+    popup.style.fontSize = "15.5px";
+    popup.style.fontWeight = "700";
+    popup.style.whiteSpace = "nowrap";
+    popup.style.boxShadow = "0 0 30px 10px rgb(165 243 252)";
+    popup.style.opacity = "0";
+    popup.style.transition = "all 280ms cubic-bezier(0.4, 0, 0.2, 1)";
+    popup.style.zIndex = "10000";
+    popup.textContent = name;
+    document.body.appendChild(popup);
 
-            const flyer = createFlyer(emoji, "2.2rem", 55);
-            flyer.style.left = `${start.x}px`;
-            flyer.style.top = `${start.y}px`;
-            flyer.style.transform = "translate(-50%, -50%)";
-            flyer.style.filter = "drop-shadow(6px 6px 12px rgb(165 243 252))";
-            overlay.appendChild(flyer);
+    requestAnimationFrame(() => requestAnimationFrame(() => popup.style.opacity = "1"));
 
-            requestAnimationFrame(() => {
-                flyer.style.transition = "all 680ms cubic-bezier(0.25, 0.46, 0.45, 0.94)";
-                flyer.style.left = `${end.x}px`;
-                flyer.style.top = `${end.y}px`;
-            });
-
-            setTimeout(() => {
-                flyer.style.opacity = "0";
-                flyer.style.transform = "translate(-50%, -50%) scale(0.75)";
-                setTimeout(() => flyer.remove(), 200);
-            }, 720);
-        }
-
-        function showSkillNamePopup(name, row, col) {
-            const overlay = document.getElementById("animation-overlay");
-            const center = getCellCenter(row, col);
-
-            const popup = document.createElement("div");
-            popup.style.position = "absolute";
-            popup.style.left = `${center.x}px`;
-            popup.style.top = `${center.y}px`;
-            popup.style.transform = "translate(-50%, -50%)";
-            popup.style.background = "rgba(165, 243, 252, 0.96)";
-            popup.style.color = "#0f172a";
-            popup.style.padding = "8px 20px";
-            popup.style.borderRadius = "9999px";
-            popup.style.fontSize = "15px";
-            popup.style.fontWeight = "700";
-            popup.style.whiteSpace = "nowrap";
-            popup.style.boxShadow = "0 0 25px 8px rgb(165 243 252)";
-            popup.style.opacity = "0";
-            popup.style.transition = "all 280ms cubic-bezier(0.4, 0, 0.2, 1)";
-            popup.textContent = name;
-            overlay.appendChild(popup);
-
-            requestAnimationFrame(() => popup.style.opacity = "1");
-
-            setTimeout(() => {
-                popup.style.opacity = "0";
-                popup.style.transform = "translate(-50%, -70%)";
-                setTimeout(() => popup.remove(), 320);
-            }, 1100);
-        }
+    setTimeout(() => {
+        popup.style.opacity = "0";
+        popup.style.transform = "translate(-50%, -72%)";
+        setTimeout(() => popup.remove(), 340);
+    }, 1150);
+}
 
         /* ====================== UI 更新（保持不变） ====================== */
         function updateSelectedPanel() {
