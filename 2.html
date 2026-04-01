@@ -73,25 +73,27 @@
 
         .unit-cell::before {
             content: attr(data-combat);
-            font-size: clamp(1.8rem, 4.5vw, 2.25rem); /* 移动端自动缩放 */
+            font-size: clamp(1.65rem, 4.8vw, 2.25rem);   /* 关键：随屏幕自动缩小 */
             position: absolute;
-            top: 4px;
-            left: 8px;
-            filter: drop-shadow(0 10px 8px rgb(0 0 0 / 0.4));
+            top: 20%;
+            left: 12%;
+            filter: drop-shadow(0 8px 6px rgb(0 0 0 / 0.5));
             z-index: 20;
             pointer-events: none;
+            line-height: 1;
         }
 
         .unit-cell::after {
             content: attr(data-terrain);
-            font-size: clamp(1.4rem, 3.5vw, 1.8rem);
+            font-size: clamp(2rem, 3.8vw, 1.8rem);
             position: absolute;
-            bottom: 4px;
-            right: 8px;
-            filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.3));
+            bottom: 20%;
+            right: 12%;
+            filter: drop-shadow(0 8px 6px rgb(0 0 0 / 0.4));
             z-index: 10;
             pointer-events: none;
             opacity: 0.95;
+            line-height: 1;
         }
 
         .hp-bar { height: 8px; background: #1e2937; border-radius: 9999px; overflow: hidden; }
