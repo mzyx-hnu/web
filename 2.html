@@ -229,25 +229,41 @@
                                 <div id="selected-hp-fill" class="hp-fill bg-emerald-400"></div>
                             </div>
                         </div>
+
+                        <!-- 攻击力 -->
                         <div class="flex justify-between items-center text-sm">
                             <span class="font-bold text-amber-300">⚔️ 攻击力 ATK</span>
                             <span id="selected-atk" class="font-mono text-xl font-bold"></span>
                         </div>
+
+                        <!-- 防御力 -->
                         <div class="flex justify-between items-center text-sm">
                             <span class="font-bold text-sky-300">🛡️ 防御力 DEF</span>
                             <span id="selected-def" class="font-mono text-xl font-bold"></span>
                         </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="font-bold text-cyan-300">🔵 蓝量 MANA</span>
-                            <span id="selected-mana" class="font-mono text-xl font-bold"></span>
-                        </div>
+
+                        <!-- 剩余移动 -->
                         <div class="flex justify-between items-center text-sm">
                             <span class="font-bold text-emerald-300">🚶 剩余移动</span>
                             <span id="selected-remaining-move" class="font-mono text-xl font-bold"></span>
                         </div>
+
+                        <!-- 攻击范围 -->
                         <div class="flex justify-between items-center text-sm">
                             <span class="font-bold text-rose-300">🎯 攻击范围</span>
                             <span id="selected-range" class="font-mono text-xl font-bold"></span>
+                        </div>
+
+                        <!-- 蓝量 -->
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="font-bold text-cyan-300">🔵 蓝量 MANA</span>
+                            <span id="selected-mana" class="font-mono text-xl font-bold"></span>
+                        </div>
+
+                        <!-- 【新增】当前效果显示栏 -->
+                        <div class="pt-3 border-t border-white/10">
+                            <div class="text-xs font-bold uppercase tracking-widest text-purple-300 mb-2">当前效果</div>
+                            <div id="active-effects-list" class="flex flex-wrap gap-2 min-h-[28px]"></div>
                         </div>
                     </div>
 
@@ -307,14 +323,23 @@
         const GAME_CONFIG = {
             UNIT_TYPES: {
                 knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["doubleStrike", "shieldBash"], ultSkill: "ultimateStrike", isTerrain: false },
-                archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "arcaneBlast"], ultSkill: "ultimateStrike", isTerrain: false },
+                archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "poisonArrow"], ultSkill: "ultimateStrike", isTerrain: false },
                 heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, mana: 8, normalSkills: ["shieldBash", "doubleStrike"], ultSkill: "ultimateStrike", isTerrain: false },
                 mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike", isTerrain: false },
                 mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true, temporary: false },
                 river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false },
                 forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false },
                 manaPoint:{ emoji: "🔵", name: "回蓝点", desc: "踩踏后恢复5点蓝量", isTerrain: true, temporary: true, effect: "mana", value: 5 },
-                healPoint:{ emoji: "❤️", name: "回血点", desc: "踩踏后恢复5点生命", isTerrain: true, temporary: true, effect: "heal", value: 5 }
+                healPoint:{ emoji: "❤️", name: "回血点", desc: "踩踏后恢复5点生命", isTerrain: true, temporary: true, effect: "heal", value: 5 },
+                swamp: {
+                    emoji: "🟢",
+                    name: "毒沼",
+                    desc: "进入后中毒",
+                    isTerrain: true,
+                    temporary: false,
+                    effectId: "poison",        // 引用效果系统
+                    effectDuration: 4
+                }
             },
 
             SKILLS: {
@@ -322,7 +347,8 @@
                 precisionShot: { emoji: "🏹", name: "精准射击", manaCost: 3, range: 4, damage: 11, desc: "超远距离精准攻击" },
                 arcaneBlast: { emoji: "🔥", name: "奥术冲击", manaCost: 5, range: 2, damage: 14, desc: "魔法爆炸伤害" },
                 shieldBash: { emoji: "🛡️", name: "盾牌猛击", manaCost: 3, range: 1, damage: 9, desc: "坦克近战反击" },
-                ultimateStrike: { emoji: "🌟", name: "终极审判", manaCost: 9, range: 3, damage: 25, desc: "消耗大量蓝量的终极一击" }
+                ultimateStrike: { emoji: "🌟", name: "终极审判", manaCost: 9, range: 3, damage: 25, desc: "消耗大量蓝量的终极一击" },
+                poisonArrow: { emoji: "🏹", name: "毒箭", manaCost: 4, range: 3, damage: 8, effectId: "stun", effectDuration: 3, desc: "造成伤害并施加中毒" }
             },
 
             INITIAL: {
@@ -341,6 +367,111 @@
 
             BOARD_SIZE: 10
         };
+
+        /**
+         * ====================== 【完整版】解耦效果系统 Effect System ======================
+         * 完全模块化：定义 + 处理逻辑分离，支持技能和地形自由组合
+         */
+        const EFFECT_LIBRARY = {
+            poison: { id: "poison", name: "中毒", emoji: "☠️", desc: "每回合结束受到伤害", duration: 3, tickDamage: 3, stackable: true, color: "emerald" },
+            burn:   { id: "burn",   name: "燃烧", emoji: "🔥", desc: "每回合结束受到伤害", duration: 2, tickDamage: 5, stackable: false, color: "rose" },
+            slow:   { id: "slow",   name: "减速", emoji: "🐢", desc: "移动范围减少", duration: 2, moveReduce: 2, stackable: true, color: "cyan" },
+            stun:   { id: "stun",   name: "禁锢", emoji: "⛓️", desc: "无法移动和攻击", duration: 1, disableMove: true, disableAttack: true, stackable: false, color: "slate" },
+            blind:  { id: "blind",  name: "致盲", emoji: "🌫️", desc: "攻击范围减少", duration: 2, rangeReduce: 1, stackable: true, color: "amber" },
+            silence:{ id: "silence",name: "沉默", emoji: "🔇", desc: "无法使用技能", duration: 2, disableSkill: true, stackable: false, color: "violet" },
+            regen:  { id: "regen",  name: "生命回复", emoji: "❤️", desc: "每回合回复生命", duration: 3, tickHeal: 4, stackable: true, color: "emerald" },
+            atkBuff:{ id: "atkBuff",name: "攻击强化", emoji: "⚔️", desc: "攻击力提升", duration: 3, atkAdd: 4, stackable: true, color: "amber" },
+            defBuff:{ id: "defBuff",name: "防御强化", emoji: "🛡️", desc: "防御力提升", duration: 3, defAdd: 3, stackable: true, color: "sky" },
+            tempSkill: { id: "tempSkill", name: "临时技能", emoji: "✨", desc: "获得临时技能", duration: 2, grantSkill: null, stackable: false, color: "violet" }
+        };
+
+        /**
+         * 效果处理器（完全解耦）
+         */
+        const EFFECT_HANDLERS = {
+            tick(unit, eff) {
+                const template = EFFECT_LIBRARY[eff.id];
+                if (template.tickDamage) unit.hp = Math.max(0, unit.hp - template.tickDamage);
+                if (template.tickHeal)   unit.hp = Math.min(unit.maxHp, unit.hp + template.tickHeal);
+            },
+
+            getEffectiveStat(unit, stat) {
+                if (!unit.activeEffects) return 0;
+                let value = 0;
+                unit.activeEffects.forEach(eff => {
+                    const t = EFFECT_LIBRARY[eff.id];
+                    if (stat === "atk" && t.atkAdd) value += t.atkAdd;
+                    if (stat === "def" && t.defAdd) value += t.defAdd;
+                    if (stat === "move" && t.moveReduce) value -= t.moveReduce;
+                    if (stat === "range" && t.rangeReduce) value -= t.rangeReduce;
+                });
+                return value;
+            },
+
+            isDisabled(unit, action) {
+                if (!unit.activeEffects) return false;
+                return unit.activeEffects.some(eff => {
+                    const t = EFFECT_LIBRARY[eff.id];
+                    if (action === "move" && t.disableMove) return true;
+                    if (action === "attack" && t.disableAttack) return true;
+                    if (action === "skill" && t.disableSkill) return true;
+                    return false;
+                });
+            }
+        };
+
+        /**
+         * 应用效果（给技能和地形统一使用）
+         */
+        function applyEffect(unit, effectId, customDuration = null) {
+            if (!unit.activeEffects) unit.activeEffects = [];
+            const template = EFFECT_LIBRARY[effectId];
+            if (!template) return;
+
+            const effect = {
+                id: effectId,
+                remainingTurns: customDuration !== null ? customDuration : template.duration
+            };
+
+            if (template.stackable) {
+                const existing = unit.activeEffects.find(e => e.id === effectId);
+                if (existing) {
+                    existing.remainingTurns = Math.max(existing.remainingTurns, effect.remainingTurns);
+                    return;
+                }
+            }
+            unit.activeEffects.push(effect);
+            addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${template.color}-400">${template.emoji} ${template.name}</span>`, template.color);
+        }
+
+        /**
+         * 每回合结束统一 Tick 所有效果
+         */
+        function tickAllEffects() {
+            [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(unit => {
+                if (!unit.activeEffects || unit.hp <= 0) return;
+
+                for (let i = unit.activeEffects.length - 1; i >= 0; i--) {
+                    const eff = unit.activeEffects[i];
+                    EFFECT_HANDLERS.tick(unit, eff);
+
+                    eff.remainingTurns--;
+                    if (eff.remainingTurns <= 0) {
+                        unit.activeEffects.splice(i, 1);
+                        const template = EFFECT_LIBRARY[eff.id];
+                        addLog(`${unit.emoji} 的 ${template.name} 效果消失`, "slate");
+                    }
+                }
+            });
+        }
+
+        /**
+         * 计算当前有效属性（不修改原始值）
+         */
+        function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getEffectiveStat(unit, "atk"); }
+        function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getEffectiveStat(unit, "def"); }
+        function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange - EFFECT_HANDLERS.getEffectiveStat(unit, "move")); }
+        function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange - EFFECT_HANDLERS.getEffectiveStat(unit, "range")); }
 
         /**
          * 【架构重构】GameState 类 - 统一管理所有游戏状态
@@ -477,7 +608,8 @@
                 remainingMove: template.moveRange,
                 hasAttacked: false,
                 forestModifier: false,
-                skillUsedThisTurn: false
+                skillUsedThisTurn: false,
+                activeEffects: []
             };
         }
 
@@ -822,12 +954,25 @@
                 }
                 if (tConfig.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
             }
+
+            // 新增：支持地形自带效果
+            if (terrain.effectId) {
+                applyEffect(unit, terrain.effectId, terrain.effectDuration || 3);
+            }
+            if (terrain.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
         }
 
         /* ====================== 操作逻辑（保持不变） ====================== */
         function attemptPlayerMove(unit, targetRow, targetCol) {
-            if (unit.remainingMove <= 0) return false;
-            const reachable = calculateReachable(unit.row, unit.col, unit.remainingMove, unit);
+            if (EFFECT_HANDLERS.isDisabled(unit, "move")) {
+                addLog(`${unit.emoji} ${unit.name} 被禁锢，无法移动！`, "slate");
+                return false;
+            }
+
+            const effectiveMove = getEffectiveMoveRange(unit);
+            if (effectiveMove <= 0) return false;
+
+            const reachable = calculateReachable(unit.row, unit.col, effectiveMove, unit);
             const key = `${targetRow},${targetCol}`;
             const dist = reachable[key];
             if (dist === undefined || dist <= 0) return false;
@@ -843,15 +988,18 @@
         }
 
         function performAttack(attacker, defender) {
-            let damage = Math.max(1, attacker.atk - defender.def);
+            if (EFFECT_HANDLERS.isDisabled(attacker, "attack")) {
+                addLog(`${attacker.emoji} ${attacker.name} 被禁锢/致盲，无法攻击！`, "slate");
+                return;
+            }
+
+            let damage = Math.max(1, getEffectiveAtk(attacker) - defender.def);
             defender.hp = Math.max(0, defender.hp - damage);
 
             const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
             addLog(`<span class="text-${attackerColor}-400">${attacker.emoji}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
 
-            // 新增：伤害跳字
             showDamagePopup(damage, defender.row, defender.col);
-
             if (attacker.atkRange === 1) {
                 animateMeleeBump(attacker.row, attacker.col, defender.row, defender.col, attacker.emoji);
             } else {
@@ -865,6 +1013,11 @@
             defender.hp = Math.max(0, defender.hp - damage);
 
             addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+            
+            // 新增：技能可以附加效果
+            if (skill.effectId) {
+                applyEffect(defender, skill.effectId, skill.effectDuration);
+            }
 
             // 新增：伤害跳字（技能伤害）
             showDamagePopup(damage, defender.row, defender.col);
@@ -877,6 +1030,11 @@
             if (STATE.currentTurn !== "player" || !STATE.selected || STATE.selected.team !== "friendly") return;
             const unit = getUnit("friendly", STATE.selected.id);
             const skill = GAME_CONFIG.SKILLS[skillId];
+
+            if (EFFECT_HANDLERS.isDisabled(unit, "skill")) {
+                addLog(`${unit.emoji} ${unit.name} 被沉默，无法使用技能！`, "slate");
+                return;
+            }
             if (!skill || unit.currentMana < skill.manaCost || unit.hasAttacked) return;
 
             STATE.selectedSkill = skillId;
@@ -1589,19 +1747,57 @@ function showSkillNamePopup(name, row, col) {
                 document.getElementById("selected-hp-fill").className = `hp-fill ${isFriendly ? "bg-emerald-400" : "bg-rose-400"}`;
                 document.getElementById("selected-hp-text").innerHTML = `${entity.hp} / ${entity.maxHp}`;
 
-                document.getElementById("selected-atk").textContent = entity.atk;
-                document.getElementById("selected-def").textContent = entity.def;
+                // 在 unit-stats 区域替换原来的属性显示
+                document.getElementById("selected-atk").innerHTML = `
+                    ${getEffectiveAtk(entity)} 
+                    <span class="text-xs ${EFFECT_HANDLERS.getEffectiveStat(entity,'atk') > 0 ? 'text-amber-400' : 'text-rose-400'}">
+                        (${EFFECT_HANDLERS.getEffectiveStat(entity,'atk') > 0 ? '+' : ''}${EFFECT_HANDLERS.getEffectiveStat(entity,'atk')})
+                    </span>`;
+
+                document.getElementById("selected-def").innerHTML = `
+                    ${getEffectiveDef(entity)} 
+                    <span class="text-xs ${EFFECT_HANDLERS.getEffectiveStat(entity,'def') > 0 ? 'text-sky-400' : 'text-rose-400'}">
+                        (${EFFECT_HANDLERS.getEffectiveStat(entity,'def') > 0 ? '+' : ''}${EFFECT_HANDLERS.getEffectiveStat(entity,'def')})
+                    </span>`;
+
+                // 移动范围和攻击范围同理
+                const effMove = getEffectiveMoveRange(entity);
+                document.getElementById("selected-remaining-move").innerHTML = `
+                    <span class="text-emerald-400">${effMove}</span> / ${entity.moveRange}
+                    ${effMove !== entity.moveRange ? `<span class="text-xs text-cyan-400">(${effMove > entity.moveRange ? '+' : ''}${effMove - entity.moveRange})</span>` : ''}`;
+
+                const effRange = getEffectiveAtkRange(entity);
+                document.getElementById("selected-range").innerHTML = `
+                    <span class="text-rose-400">${effRange}</span>
+                    ${effRange !== entity.atkRange ? `<span class="text-xs text-cyan-400">(${effRange > entity.atkRange ? '+' : ''}${effRange - entity.atkRange})</span>` : ''}`;
                 document.getElementById("selected-mana").innerHTML = `<span class="text-cyan-400">${entity.currentMana}</span> / ${entity.maxMana}`;
 
-                const remaining = isFriendly ? entity.remainingMove : entity.moveRange;
-                document.getElementById("selected-remaining-move").innerHTML = `<span class="text-emerald-400">${remaining}</span> / ${entity.moveRange}`;
+                // const remaining = isFriendly ? entity.remainingMove : entity.moveRange;
+                // document.getElementById("selected-remaining-move").innerHTML = `<span class="text-emerald-400">${remaining}</span> / ${entity.moveRange}`;
 
-                const effectiveAtk = entity.forestModifier ? Math.max(1, entity.atkRange - 1) : entity.atkRange;
-                document.getElementById("selected-range").innerHTML = `<span class="text-rose-400">${effectiveAtk}</span>`;
+                // const effectiveAtk = entity.forestModifier ? Math.max(1, entity.atkRange - 1) : entity.atkRange;
+                // document.getElementById("selected-range").innerHTML = `<span class="text-rose-400">${effectiveAtk}</span>`;
 
                 const skillDiv = document.getElementById("skill-selection");
                 const skillsList = document.getElementById("skills-list");
                 const titleEl = document.getElementById("skill-title");
+
+                // 显示当前所有效果
+                const effectsContainer = document.getElementById("active-effects-list");
+                effectsContainer.innerHTML = "";
+
+                if (entity.activeEffects && entity.activeEffects.length > 0) {
+                    entity.activeEffects.forEach(eff => {
+                        const template = EFFECT_LIBRARY[eff.id];
+                        if (!template) return;
+                        const div = document.createElement("div");
+                        div.className = `px-3 py-1 rounded-2xl text-xs flex items-center gap-1 bg-${template.color}-900/30 text-${template.color}-300`;
+                        div.innerHTML = `${template.emoji} ${template.name} <span class="font-mono text-[10px] opacity-70">(${eff.remainingTurns})</span>`;
+                        effectsContainer.appendChild(div);
+                    });
+                } else {
+                    effectsContainer.innerHTML = `<span class="text-slate-500 text-xs">无效果</span>`;
+                }
 
                 skillDiv.classList.remove("hidden");
                 skillsList.innerHTML = "";
@@ -1759,6 +1955,15 @@ function showSkillNamePopup(name, row, col) {
                 if (index >= STATE.enemyUnits.length) { finishEnemyTurn(); return; }
                 const enemy = STATE.enemyUnits[index];
                 if (enemy.hp <= 0) { index++; actNextEnemy(); return; }
+
+                // 【新增】敌方也检查效果禁用
+                if (EFFECT_HANDLERS.isDisabled(enemy, "move") && EFFECT_HANDLERS.isDisabled(enemy, "attack")) {
+                    addLog(`${enemy.emoji} ${enemy.name} 被完全控制，本回合无法行动`, "slate");
+                    index++;
+                    setTimeout(actNextEnemy, 400);
+                    return;
+                }
+
                 let closest = null, minDist = Infinity;
                 STATE.friendlyUnits.forEach(f => {
                     if (f.hp > 0) {
@@ -1767,55 +1972,69 @@ function showSkillNamePopup(name, row, col) {
                     }
                 });
                 if (!closest) { index++; actNextEnemy(); return; }
-                const config = enemy;
+
+                // 计算有效移动范围
+                const effectiveMove = getEffectiveMoveRange(enemy);
                 let bestR = enemy.row, bestC = enemy.col, bestDist = Infinity;
-                for (let dr = -config.moveRange; dr <= config.moveRange; dr++) {
-                    for (let dc = -config.moveRange; dc <= config.moveRange; dc++) {
-                        const nr = enemy.row + dr, nc = enemy.col + dc;
-                        if (nr < 0 || nr >= GAME_CONFIG.BOARD_SIZE || nc < 0 || nc >= GAME_CONFIG.BOARD_SIZE) continue;
-                        const terrain = STATE.terrainUnits.find(t => t.row === nr && t.col === nc);
-                        if (terrain && GAME_CONFIG.UNIT_TYPES[terrain.type] && GAME_CONFIG.UNIT_TYPES[terrain.type].impassable) continue;
-                        let occupied = false;
-                        [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
-                            if (u.hp > 0 && u.row === nr && u.col === nc) occupied = true;
-                        });
-                        if (occupied) continue;
-                        const newDist = Math.abs(nr - closest.row) + Math.abs(nc - closest.col);
-                        if (newDist < bestDist) { bestDist = newDist; bestR = nr; bestC = nc; }
+
+                // 只在能移动时寻找位置
+                if (!EFFECT_HANDLERS.isDisabled(enemy, "move") && effectiveMove > 0) {
+                    for (let dr = -effectiveMove; dr <= effectiveMove; dr++) {
+                        for (let dc = -effectiveMove; dc <= effectiveMove; dc++) {
+                            const nr = enemy.row + dr, nc = enemy.col + dc;
+                            if (nr < 0 || nr >= GAME_CONFIG.BOARD_SIZE || nc < 0 || nc >= GAME_CONFIG.BOARD_SIZE) continue;
+                            const terrain = STATE.terrainUnits.find(t => t.row === nr && t.col === nc);
+                            if (terrain && GAME_CONFIG.UNIT_TYPES[terrain.type]?.impassable) continue;
+                            let occupied = false;
+                            [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(u => {
+                                if (u.hp > 0 && u.row === nr && u.col === nc) occupied = true;
+                            });
+                            if (occupied) continue;
+                            const newDist = Math.abs(nr - closest.row) + Math.abs(nc - closest.col);
+                            if (newDist < bestDist) { bestDist = newDist; bestR = nr; bestC = nc; }
+                        }
                     }
                 }
+
                 const fromRow = enemy.row, fromCol = enemy.col;
                 enemy.row = bestR; enemy.col = bestC;
                 addLog(`<span class="text-rose-400">${enemy.emoji} ${enemy.name}</span> 移动到 (${bestR},${bestC})`, "rose");
                 animateMove(fromRow, fromCol, bestR, bestC, enemy.emoji);
                 applyTerrainEffect(enemy);
                 renderBoard();
+
                 const afterDist = Math.abs(bestR - closest.row) + Math.abs(bestC - closest.col);
+
+                // 技能 / 攻击也检查禁用
                 let usedSkill = false;
-                const possibleSkills = (enemy.normalSkills || []).concat(enemy.ultSkill ? [enemy.ultSkill] : []);
-                let bestSkill = null, bestDmg = 0;
-                for (let sid of possibleSkills) {
-                    const sk = GAME_CONFIG.SKILLS[sid];
-                    if (sk && enemy.currentMana >= sk.manaCost && isInRange(enemy, closest.row, closest.col, sk.range)) {
-                        const dmg = Math.max(1, sk.damage - closest.def);
-                        if (dmg > bestDmg) { bestDmg = dmg; bestSkill = sid; }
+                if (!EFFECT_HANDLERS.isDisabled(enemy, "skill")) {
+                    const possibleSkills = (enemy.normalSkills || []).concat(enemy.ultSkill ? [enemy.ultSkill] : []);
+                    let bestSkill = null, bestDmg = 0;
+                    for (let sid of possibleSkills) {
+                        const sk = GAME_CONFIG.SKILLS[sid];
+                        if (sk && enemy.currentMana >= sk.manaCost && isInRange(enemy, closest.row, closest.col, sk.range)) {
+                            const dmg = Math.max(1, sk.damage - closest.def);
+                            if (dmg > bestDmg) { bestDmg = dmg; bestSkill = sid; }
+                        }
+                    }
+                    if (bestSkill) {
+                        const skill = GAME_CONFIG.SKILLS[bestSkill];
+                        performSkill(enemy, bestSkill, closest);
+                        enemy.currentMana -= skill.manaCost;
+                        enemy.skillUsedThisTurn = true;
+                        usedSkill = true;
                     }
                 }
-                if (bestSkill) {
-                    const skill = GAME_CONFIG.SKILLS[bestSkill];
-                    performSkill(enemy, bestSkill, closest);
-                    enemy.currentMana -= skill.manaCost;
-                    enemy.skillUsedThisTurn = true;
-                    usedSkill = true;
-                    addLog(`<span class="text-rose-400">${enemy.emoji}</span> 使用技能 <span class="text-cyan-400">${skill.emoji} ${skill.name}</span>`, "rose");
-                } else if (afterDist <= enemy.atkRange) {
+
+                if (!usedSkill && !EFFECT_HANDLERS.isDisabled(enemy, "attack") && afterDist <= getEffectiveAtkRange(enemy)) {
                     performAttack(enemy, closest);
                 }
+
                 renderBoard();
                 updateAllLists();
                 checkGameOver();
                 index++;
-                setTimeout(actNextEnemy, usedSkill || afterDist <= enemy.atkRange ? 700 : 400);
+                setTimeout(actNextEnemy, usedSkill || afterDist <= getEffectiveAtkRange(enemy) ? 700 : 400);
             };
             setTimeout(actNextEnemy, 800);
         }
@@ -1825,6 +2044,7 @@ function showSkillNamePopup(name, row, col) {
             STATE.turnCount++;
             applyManaRegen("enemy");
             resetActionsForTeam("friendly");
+            tickAllEffects();
             STATE.selectedSkill = null;
             generatePowerUp();
             renderBoard();
@@ -1837,6 +2057,7 @@ function showSkillNamePopup(name, row, col) {
             if (STATE.currentTurn !== "player") return;
             deselectUnit();
             applyManaRegen("friendly");
+            tickAllEffects();
             enemyTurn();
         }
 
