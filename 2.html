@@ -73,11 +73,12 @@
 
         .unit-cell::before {
             content: attr(data-combat);
-            font-size: clamp(1.65rem, 4.8vw, 2.25rem);   /* 关键：随屏幕自动缩小 */
+            font-size: clamp(1.8rem, 5vw, 2.35rem);
             position: absolute;
-            top: 20%;
-            left: 12%;
-            filter: drop-shadow(0 8px 6px rgb(0 0 0 / 0.5));
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);   /* 关键：完美居中 */
+            filter: drop-shadow(0 10px 8px rgb(0 0 0 / 0.5));
             z-index: 20;
             pointer-events: none;
             line-height: 1;
@@ -85,11 +86,11 @@
 
         .unit-cell::after {
             content: attr(data-terrain);
-            font-size: clamp(2rem, 3.8vw, 1.8rem);
+            font-size: clamp(1.25rem, 3.2vw, 1.65rem);
             position: absolute;
-            bottom: 20%;
+            bottom: 12%;
             right: 12%;
-            filter: drop-shadow(0 8px 6px rgb(0 0 0 / 0.4));
+            filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.4));
             z-index: 10;
             pointer-events: none;
             opacity: 0.95;
@@ -492,6 +493,43 @@
             }
         }
 
+        /**
+         * 【新功能】伤害跳字动画（红色飘字 + 暴击特效）
+         * 位置完全跟随格子中心，兼容高DPI和响应式
+         */
+        function showDamagePopup(damage, row, col, isCritical = false) {
+            const center = getCellCenter(row, col);
+            
+            const popup = document.createElement("div");
+            popup.style.position = "fixed";
+            popup.style.left = `${center.x}px`;
+            popup.style.top = `${center.y - 20}px`;   // 起始位置稍靠上
+            popup.style.transform = "translate(-50%, -50%)";
+            popup.style.fontSize = isCritical ? "2.4rem" : "2.1rem";
+            popup.style.fontWeight = "900";
+            popup.style.color = isCritical ? "#f59e0b" : "#f87171";
+            popup.style.textShadow = isCritical 
+                ? "0 0 20px #f59e0b, 0 0 30px #f59e0b" 
+                : "0 0 15px #f87171";
+            popup.style.zIndex = "99999";
+            popup.style.pointerEvents = "none";
+            popup.style.opacity = "1";
+            popup.style.transition = "all 900ms cubic-bezier(0.4, 0, 0.2, 1)";
+            popup.textContent = `-${damage}`;
+            
+            document.body.appendChild(popup);
+
+            // 动画：向上飘 + 淡出 + 轻微放大
+            requestAnimationFrame(() => {
+                popup.style.top = `${center.y - 85}px`;
+                popup.style.opacity = "0";
+                popup.style.transform = "translate(-50%, -50%) scale(1.15)";
+            });
+
+            // 清理
+            setTimeout(() => popup.remove(), 950);
+        }
+
         /* ====================== 棋盘渲染（性能优化版 · 缓存 + 差异更新） ====================== */
         function renderBoard() {
             const boardEl = document.getElementById("board");
@@ -528,16 +566,19 @@
         }
 
         /**
-         * 【性能优化】单格内容差异更新
-         * 只修改需要变化的部分，极大减少 DOM 操作
+         * 单格内容更新（已修复多格高亮 + 残留问题）
          */
         function updateCellContent(cell, row, col) {
             const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
 
-            // 1. 清空旧高亮（编辑模式除外）
-            cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap", "highlight-skill", "highlight-edit");
+            // 【关键】每次都先清除所有可能的高亮类
+            cell.classList.remove(
+                "highlight-move", "highlight-attack", "highlight-overlap", 
+                "highlight-skill", "highlight-edit"
+            );
+            cell.style.boxShadow = "";   // 清除自定义阴影
 
-            // 2. 战斗单位显示
+            // 战斗单位
             if (combatUnit) {
                 cell.setAttribute("data-combat", combatUnit.emoji);
                 cell.style.background = combatTeam === "friendly" 
@@ -545,10 +586,10 @@
                     : "rgba(239, 68, 68, 0.18)";
             } else {
                 cell.removeAttribute("data-combat");
-                cell.style.background = ""; // 恢复默认
+                cell.style.background = "";
             }
 
-            // 3. 地形显示
+            // 地形
             if (terrainUnit) {
                 cell.setAttribute("data-terrain", terrainUnit.emoji || "❓");
                 if (!combatUnit) {
@@ -561,21 +602,27 @@
                 cell.removeAttribute("data-terrain");
             }
 
-            // 4. 编辑模式高亮（增强版）
+            // ==================== 编辑模式高亮 ====================
             if (STATE.editMode && STATE.editingUnit) {
-                const isEditing = 
-                    (STATE.editingUnit.team === combatTeam && STATE.editingUnit.id === (combatUnit ? combatUnit.id : null)) ||
-                    (STATE.editingUnit.team === "terrain" && terrainUnit && STATE.editingUnit.id === terrainUnit.id);
-                
-                if (isEditing) {
-                    cell.classList.add("highlight-edit");
-                    cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.7) inset";
-                }
-            }
+                let isTarget = false;
 
-            // 【移动端优化】为每个格子添加长按支持（只绑定一次）
-            if (!cell.dataset.hasLongPress) {
-                addLongPressSupport(cell, row, col);
+                if (STATE.editingUnit.pendingAdd) {
+                    // 空白格新增模式：只高亮当前点击的那一个格子
+                    isTarget = (row === STATE.editingUnit.row && col === STATE.editingUnit.col);
+                } 
+                else {
+                    // 编辑已有单位/地形
+                    isTarget = 
+                        (STATE.editingUnit.team === combatTeam && 
+                        STATE.editingUnit.id === (combatUnit ? combatUnit.id : null)) ||
+                        (STATE.editingUnit.team === "terrain" && 
+                        terrainUnit && STATE.editingUnit.id === terrainUnit.id);
+                }
+
+                if (isTarget) {
+                    cell.classList.add("highlight-edit");
+                    cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.75) inset";
+                }
             }
         }
 
@@ -726,6 +773,9 @@
             const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
             addLog(`<span class="text-${attackerColor}-400">${attacker.emoji}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
 
+            // 新增：伤害跳字
+            showDamagePopup(damage, defender.row, defender.col);
+
             if (attacker.atkRange === 1) {
                 animateMeleeBump(attacker.row, attacker.col, defender.row, defender.col, attacker.emoji);
             } else {
@@ -739,6 +789,9 @@
             defender.hp = Math.max(0, defender.hp - damage);
 
             addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+
+            // 新增：伤害跳字（技能伤害）
+            showDamagePopup(damage, defender.row, defender.col);
 
             animateProjectile(attacker.row, attacker.col, defender.row, defender.col, skill.emoji);
             showSkillNamePopup(skill.name, defender.row, defender.col);
@@ -887,32 +940,30 @@
         }
 
         /**
-         * 编辑模式点击处理（已修复：复制单位 + 空白格高亮bug）
+         * 编辑模式点击处理（已彻底修复高亮残留 + 空白格多亮问题）
          */
         function handleEditClick(row, col) {
             const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
 
+            // 【关键修复】无论点什么，都先清空之前的选中和高亮状态
+            STATE.selected = null;
+            STATE.selectedSkill = null;
+
             if (STATE.editingUnit && STATE.editingUnit.pendingCopy) {
-                // 【修复点3】复制单位逻辑：点击空白格后真正复制
+                // 复制模式：点击空白格才生效
                 if (!combatUnit && !terrainUnit) {
                     const source = getUnit(STATE.editingUnit.team, STATE.editingUnit.sourceId);
                     if (source) {
                         const newId = (STATE.editingUnit.team === "friendly" ? "f_copy_" : STATE.editingUnit.team === "enemy" ? "e_copy_" : "t_copy_") + Date.now();
-                        let newUnit;
-                        
-                        if (STATE.editingUnit.team !== "terrain") {
-                            newUnit = { ...source, id: newId, row, col };
-                            if (STATE.editingUnit.team === "friendly") STATE.friendlyUnits.push(newUnit);
-                            else STATE.enemyUnits.push(newUnit);
-                        } else {
-                            newUnit = { ...source, id: newId, row, col };
-                            STATE.terrainUnits.push(newUnit);
-                        }
-                        
+                        let newUnit = { ...source, id: newId, row, col };
+                        if (STATE.editingUnit.team === "friendly") STATE.friendlyUnits.push(newUnit);
+                        else if (STATE.editingUnit.team === "enemy") STATE.enemyUnits.push(newUnit);
+                        else STATE.terrainUnits.push(newUnit);
+
                         addLog(`📋 已复制单位到 (${row},${col})`, "amber");
                     }
                 }
-                STATE.editingUnit = null; // 复制完成后清除状态
+                STATE.editingUnit = null; // 复制完成后清除
             } 
             else if (combatUnit || terrainUnit) {
                 // 选中已有单位/地形
@@ -922,11 +973,18 @@
                 STATE.editingUnit = { team, id, isTerrain, row, col };
             } 
             else {
-                // 点击空白格 → 待新增
-                STATE.editingUnit = { team: null, id: null, isTerrain: false, pendingAdd: true, row, col };
+                // 点击空白格 → 待新增（只标记当前格子）
+                STATE.editingUnit = { 
+                    team: null, 
+                    id: null, 
+                    isTerrain: false, 
+                    pendingAdd: true, 
+                    row, 
+                    col 
+                };
             }
 
-            renderBoard();   // 触发高亮
+            renderBoard();   // 触发高亮刷新
             renderEditForm();
         }
 
