@@ -342,18 +342,95 @@
             BOARD_SIZE: 10
         };
 
-        let STATE = {
-            friendlyUnits: [],
-            enemyUnits: [],
-            terrainUnits: [],
-            currentTurn: "player",
-            turnCount: 1,
-            selected: null,
-            selectedSkill: null,
-            editMode: false,
-            editingUnit: null,          // {team, id, isTerrain, pendingAdd: boolean}
-            previewTimeout: null
+        /**
+         * 【架构重构】GameState 类 - 统一管理所有游戏状态
+         * 方便后续添加 Undo/Redo、保存/加载等功能
+         */
+        class GameState {
+            constructor() {
+                this.friendlyUnits = [];
+                this.enemyUnits = [];
+                this.terrainUnits = [];
+                this.currentTurn = "player";
+                this.turnCount = 1;
+                this.selected = null;        // {team, id}
+                this.selectedSkill = null;
+                this.editMode = false;
+                this.editingUnit = null;     // {team, id, isTerrain, pendingAdd, row, col, pendingCopy, sourceId}
+                this.previewTimeout = null;
+            }
+
+            reset() {
+                this.friendlyUnits = [];
+                this.enemyUnits = [];
+                this.terrainUnits = [];
+                this.currentTurn = "player";
+                this.turnCount = 1;
+                this.selected = null;
+                this.selectedSkill = null;
+                this.editMode = false;
+                this.editingUnit = null;
+                this.previewTimeout = null;
+            }
+        }
+
+        // 全局实例（替代原来的 STATE）
+        let STATE = new GameState();
+
+        /**
+         * 【架构重构】AnimationManager 单例 - 统一管理所有动画
+         */
+        const AnimationManager = {
+            getCellCenter(row, col) {
+                const cell = document.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
+                if (!cell) return { x: 0, y: 0 };
+                const rect = cell.getBoundingClientRect();
+                return {
+                    x: Math.round(rect.left + rect.width / 2),
+                    y: Math.round(rect.top + rect.height / 2)
+                };
+            },
+
+            createFlyer(emoji, size = "2.7rem", z = 9999) {
+                const flyer = document.createElement("div");
+                flyer.style.position = "fixed";
+                flyer.style.fontSize = size;
+                flyer.style.zIndex = z;
+                flyer.style.pointerEvents = "none";
+                flyer.style.willChange = "transform, opacity";
+                flyer.style.transform = "translate(-50%, -50%)";
+                flyer.textContent = emoji;
+                document.body.appendChild(flyer);
+                return flyer;
+            },
+
+            animateMove(fromRow, fromCol, toRow, toCol, emoji) { /* 保持你原来的 animateMove 代码不变 */ },
+            animateMeleeBump(attackerRow, attackerCol, defenderRow, defenderCol, emoji) { /* 保持你原来的 animateMeleeBump 代码不变 */ },
+            animateProjectile(startRow, startCol, endRow, endCol, emoji) { /* 保持你原来的 animateProjectile 代码不变 */ },
+            showSkillNamePopup(name, row, col) { /* 保持你原来的 showSkillNamePopup 代码不变 */ },
+            showDamagePopup(damage, row, col, isCritical = false) { /* 保持你原来的 showDamagePopup 代码不变 */ }
         };
+
+        /**
+         * 【架构重构】Skill 类 - 为未来 Buff/Debuff 做准备
+         */
+        class Skill {
+            constructor(id, config) {
+                this.id = id;
+                Object.assign(this, config); // emoji, name, manaCost, range, damage, desc
+            }
+
+            canUse(unit) {
+                return unit.currentMana >= this.manaCost;
+            }
+        }
+
+        // 把 GAME_CONFIG.SKILLS 转换为 Skill 实例（在 initGame 前调用）
+        function initializeSkills() {
+            Object.keys(GAME_CONFIG.SKILLS).forEach(key => {
+                GAME_CONFIG.SKILLS[key] = new Skill(key, GAME_CONFIG.SKILLS[key]);
+            });
+        }
 
         /**
          * 【性能优化】格子 DOM 缓存
@@ -534,34 +611,33 @@
         function renderBoard() {
             const boardEl = document.getElementById("board");
 
-            // 首次初始化：创建所有 100 个格子并绑定事件
             if (cellCache.size === 0) {
-                boardEl.innerHTML = ""; // 只在第一次清空
+                boardEl.innerHTML = "";
                 for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
                     for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
                         const cell = document.createElement("div");
                         cell.className = `grid-cell unit-cell bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
                         cell.dataset.row = r;
                         cell.dataset.col = c;
-                        cell.addEventListener("click", () => handleCellClick(r, c)); // 只绑定一次
+                        cell.addEventListener("click", () => handleCellClick(r, c));
 
                         const key = `${r},${c}`;
                         cellCache.set(key, cell);
                         boardEl.appendChild(cell);
+
+                        if (!cell.dataset.hasLongPress) addLongPressSupport(cell, r, c);
                     }
                 }
             }
 
-            // 后续渲染：只更新每个格子的内容、背景、高亮
+            // 更新格子
             for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
                 for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
-                    const key = `${r},${c}`;
-                    const cell = cellCache.get(key);
+                    const cell = cellCache.get(`${r},${c}`);
                     if (cell) updateCellContent(cell, r, c);
                 }
             }
 
-            // 高亮范围（保持原有逻辑）
             if (STATE.selected) highlightRanges();
         }
 
@@ -1807,19 +1883,14 @@ function showSkillNamePopup(name, row, col) {
         }
 
         function resetGame() {
+            STATE.reset();   // 使用类方法
+
             STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(createCombatUnit);
             STATE.enemyUnits = GAME_CONFIG.INITIAL.enemy.map(createCombatUnit);
             STATE.terrainUnits = GAME_CONFIG.INITIAL.terrain.map(base => {
                 const template = GAME_CONFIG.UNIT_TYPES[base.type];
                 return { id: base.id, type: base.type, row: base.row, col: base.col, ...template };
             });
-
-            STATE.currentTurn = "player";
-            STATE.turnCount = 1;
-            STATE.selected = null;
-            STATE.selectedSkill = null;
-            STATE.editMode = false;
-            STATE.editingUnit = null;
 
             document.getElementById("log-container").innerHTML = "";
             addLog("🎮 新一局开始！友方 2 单位 vs 敌方 2 单位", "emerald");
@@ -1836,10 +1907,11 @@ function showSkillNamePopup(name, row, col) {
             updateSelectedPanel();
             exitEditMode();
             clearAnimationOverlay();
-            cellCache.clear(); // 重开一局时重置缓存
+            cellCache.clear();
         }
 
         function initGame() {
+            initializeSkills();   // 初始化 Skill 类
             resetGame();
         }
 
