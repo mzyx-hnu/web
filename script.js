@@ -523,7 +523,7 @@ function renderBoard() {
         for (let r = 0; r < GAME_CONFIG.BOARD_SIZE; r++) {
             for (let c = 0; c < GAME_CONFIG.BOARD_SIZE; c++) {
                 const cell = document.createElement("div");
-                cell.className = `grid-cell unit-cell bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl cursor-pointer relative`;
+                cell.className = `grid-cell unit-cell bg-slate-800/40 hover:bg-slate-700/60 border border-white/5 rounded-xl sm:rounded-2xl cursor-pointer relative transition-all`;
                 cell.dataset.row = r;
                 cell.dataset.col = c;
                 cell.addEventListener("click", () => handleCellClick(r, c));
@@ -565,8 +565,8 @@ function updateCellContent(cell, row, col) {
     if (combatUnit) {
         cell.setAttribute("data-combat", combatUnit.emoji);
         cell.style.background = combatTeam === "friendly"
-            ? "rgba(16, 185, 129, 0.18)"
-            : "rgba(239, 68, 68, 0.18)";
+            ? "rgba(16, 185, 129, 0.12)"
+            : "rgba(239, 68, 68, 0.12)";
     } else {
         cell.removeAttribute("data-combat");
         cell.style.background = "";
@@ -577,9 +577,9 @@ function updateCellContent(cell, row, col) {
         cell.setAttribute("data-terrain", terrainUnit.emoji || "❓");
         if (!combatUnit) {
             const type = terrainUnit.type;
-            if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.45)";
-            else if (type === "river") cell.style.background = "rgba(56, 189, 248, 0.28)";
-            else if (type === "forest") cell.style.background = "rgba(134, 239, 172, 0.28)";
+            if (type === "mountain") cell.style.background = "rgba(71, 85, 105, 0.4)";
+            else if (type === "river") cell.style.background = "rgba(56, 189, 248, 0.2)";
+            else if (type === "forest") cell.style.background = "rgba(134, 239, 172, 0.2)";
         }
     } else {
         cell.removeAttribute("data-terrain");
@@ -604,7 +604,6 @@ function updateCellContent(cell, row, col) {
 
         if (isTarget) {
             cell.classList.add("highlight-edit");
-            cell.style.boxShadow = "0 0 0 8px rgb(168 85 247 / 0.75) inset";
         }
     }
 }
@@ -925,6 +924,7 @@ function toggleEditMode() {
         deselectUnit();
         document.getElementById("selected-panel").classList.add("hidden");
         document.getElementById("editor-panel").classList.remove("hidden");
+        toggleInfoPanel(true); // 编辑模式也显示面板
         renderBoard();
         addLog("🛠️ 已进入编辑模式 • 点击任意格子（含空格）进行操作", "purple");
     } else {
@@ -943,6 +943,7 @@ function exitEditMode() {
     btn.classList.remove("ring-2", "ring-purple-400");
     document.getElementById("editor-panel").classList.add("hidden");
     document.getElementById("selected-panel").classList.remove("hidden");
+    toggleInfoPanel(false);
     renderBoard();
     addLog("✅ 已退出编辑模式", "emerald");
     clearAnimationOverlay();
@@ -1032,27 +1033,26 @@ function renderEditForm() {
         // 基本属性（通用）
         html += `
             <div>
-                <div class="text-xs uppercase text-purple-300 mb-2">基本属性</div>
+                <div class="text-xs uppercase text-purple-300 mb-2 font-bold tracking-widest opacity-60">基本属性</div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-xs mb-1">图标 (Emoji)</label>
-                        <div class="flex gap-2 mb-2">
-                            <!-- 快捷按钮保持不变 -->
-                            <button onclick="quickSetEmoji('⚔️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">⚔️</button>
-                            <button onclick="quickSetEmoji('🏹')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🏹</button>
-                            <button onclick="quickSetEmoji('🛡️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🛡️</button>
-                            <button onclick="quickSetEmoji('🔥')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔥</button>
-                            <button onclick="quickSetEmoji('⛰️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">⛰️</button>
-                            <button onclick="quickSetEmoji('🌊')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🌊</button>
-                            <button onclick="quickSetEmoji('🌲')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🌲</button>
-                            <button onclick="quickSetEmoji('🔵')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">🔵</button>
-                            <button onclick="quickSetEmoji('❤️')" class="text-3xl px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-xl">❤️</button>
+                        <label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">图标 (Emoji)</label>
+                        <div class="flex flex-wrap gap-1 mb-2">
+                            <button onclick="quickSetEmoji('⚔️')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">⚔️</button>
+                            <button onclick="quickSetEmoji('🏹')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">🏹</button>
+                            <button onclick="quickSetEmoji('🛡️')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">🛡️</button>
+                            <button onclick="quickSetEmoji('🔥')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">🔥</button>
+                            <button onclick="quickSetEmoji('⛰️')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">⛰️</button>
+                            <button onclick="quickSetEmoji('🌊')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">🌊</button>
+                            <button onclick="quickSetEmoji('🌲')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">🌲</button>
+                            <button onclick="quickSetEmoji('🔵')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">🔵</button>
+                            <button onclick="quickSetEmoji('❤️')" class="text-xl p-2 bg-slate-800 hover:bg-slate-700 rounded-lg">❤️</button>
                         </div>
-                        <input id="edit-emoji" type="text" value="${unit.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl text-3xl text-center" maxlength="2">
+                        <input id="edit-emoji" type="text" value="${unit.emoji}" class="editor-input w-full px-4 py-3 rounded-xl text-3xl text-center" maxlength="2">
                     </div>
                     <div>
-                        <label class="block text-xs mb-1">名称</label>
-                        <input id="edit-name" type="text" value="${unit.name}" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <label class="block text-[10px] uppercase font-bold text-slate-500 mb-1">名称</label>
+                        <input id="edit-name" type="text" value="${unit.name}" class="editor-input w-full px-4 py-3 rounded-xl">
                     </div>
                 </div>
             </div>`;
@@ -1060,44 +1060,45 @@ function renderEditForm() {
         if (!isTerrain) {
             html += `
                 <div class="grid grid-cols-3 gap-4">
-                    <div><label class="block text-xs mb-1">攻击力 ATK</label><input id="edit-atk" type="number" value="${unit.atk}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">防御力 DEF</label><input id="edit-def" type="number" value="${unit.def}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">蓝量 MANA</label><input id="edit-mana" type="number" value="${unit.mana}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">攻击 ATK</label><input id="edit-atk" type="number" value="${unit.atk}" class="editor-input w-full px-4 py-3 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">防御 DEF</label><input id="edit-def" type="number" value="${unit.def}" class="editor-input w-full px-4 py-3 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝量 MANA</label><input id="edit-mana" type="number" value="${unit.mana}" class="editor-input w-full px-4 py-3 rounded-xl text-center font-mono"></div>
                 </div>
                 <div class="grid grid-cols-3 gap-4">
-                    <div><label class="block text-xs mb-1">移动范围</label><input id="edit-move" type="number" value="${unit.moveRange}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">攻击范围</label><input id="edit-atkRange" type="number" value="${unit.atkRange}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">生命值 HP</label><input id="edit-hp" type="number" value="${unit.hp}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">移动范围</label><input id="edit-move" type="number" value="${unit.moveRange}" class="editor-input w-full px-4 py-3 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">攻击范围</label><input id="edit-atkRange" type="number" value="${unit.atkRange}" class="editor-input w-full px-4 py-3 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">生命值 HP</label><input id="edit-hp" type="number" value="${unit.hp}" class="editor-input w-full px-4 py-3 rounded-xl text-center font-mono"></div>
                 </div>
 
                 <div>
-                    <div class="text-xs uppercase text-purple-300 mb-2 flex justify-between">
-                        <span>普通技能</span>
-                        <button onclick="showAddSkillForm()" class="text-[10px] px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded-xl">+ 新增技能</button>
+                    <div class="text-xs uppercase text-purple-300 mb-3 flex justify-between font-bold tracking-widest opacity-60">
+                        <span>技能管理</span>
+                        <button onclick="showAddSkillForm()" class="text-[10px] px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg border border-purple-500/30">+ 新增技能</button>
                     </div>
-                    <div id="edit-normal-skills" class="flex flex-wrap gap-2"></div>
+                    <div id="edit-normal-skills" class="space-y-2"></div>
                     <div class="mt-4">
-                        <label class="block text-xs mb-1">终极技能</label>
-                        <select id="edit-ult-skill" class="editor-input w-full px-4 py-3 rounded-2xl">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest uppercase">终极技能</label>
+                        <select id="edit-ult-skill" class="editor-input w-full px-4 py-3 rounded-xl">
                             ${Object.keys(GAME_CONFIG.SKILLS).map(k => `<option value="${k}" ${unit.ultSkill === k ? 'selected' : ''}>${GAME_CONFIG.SKILLS[k].name}</option>`).join('')}
                         </select>
                     </div>
                 </div>`;
         } else {
-            // 【修复点4】地形改为预设选择模式
             html += `
                 <div>
-                    <div class="text-xs uppercase text-purple-300 mb-3">切换地形类型（预设）</div>
+                    <div class="text-xs uppercase text-purple-300 mb-3 font-bold tracking-widest opacity-60">地形预设</div>
                     <div class="grid grid-cols-2 gap-3" id="terrain-preset-list"></div>
                 </div>`;
         }
 
         // 保存/删除/复制按钮
         html += `
-            <div class="flex gap-3 pt-4 border-t border-white/10">
-                <button onclick="saveCurrentEdit()" class="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-3xl font-bold">保存修改</button>
-                <button onclick="deleteCurrentUnit()" class="flex-1 py-4 bg-rose-500 hover:bg-rose-600 rounded-3xl font-bold">删除该单位</button>
-                <button onclick="copySelectedUnit()" class="flex-1 py-4 bg-amber-500 hover:bg-amber-600 rounded-3xl font-bold">复制单位</button>
+            <div class="flex flex-col gap-3 pt-6 border-t border-white/10">
+                <button onclick="saveCurrentEdit()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-[0.98]">💾 保存全部修改</button>
+                <div class="flex gap-3">
+                    <button onclick="deleteCurrentUnit()" class="flex-1 py-3 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 border border-rose-500/30 font-bold rounded-2xl transition-all">🗑️ 删除</button>
+                    <button onclick="copySelectedUnit()" class="flex-1 py-3 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 border border-amber-500/30 font-bold rounded-2xl transition-all">📋 复制</button>
+                </div>
             </div>`;
     }
 
@@ -1142,12 +1143,9 @@ function renderTerrainPresetList(currentUnit) {
         const isActive = p.type === currentUnit.type;
         return `
             <button onclick="applyTerrainPreset('${p.type}')"
-                    class="p-4 rounded-3xl border-2 flex items-center gap-3 transition-all ${isActive ? 'border-purple-400 bg-purple-900/30' : 'border-slate-700 hover:border-slate-400'}">
-                <span class="text-4xl">${p.emoji}</span>
-                <div class="text-left">
-                    <div class="font-bold">${p.name}</div>
-                    <div class="text-xs text-slate-400">${p.desc || '无特殊效果'}</div>
-                </div>
+                    class="p-3 rounded-2xl border flex flex-col items-center text-center transition-all ${isActive ? 'border-purple-400 bg-purple-900/30' : 'border-white/5 bg-slate-800/40 hover:border-white/20'}">
+                <span class="text-3xl mb-1">${p.emoji}</span>
+                <div class="font-bold text-xs">${p.name}</div>
             </button>`;
     }).join('');
 }
@@ -1167,12 +1165,17 @@ function renderCurrentNormalSkills() {
         const skill = GAME_CONFIG.SKILLS[skillId];
         if (!skill) return '';
         return `
-            <div class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-2xl cursor-pointer group">
-                <span class="text-xl">${skill.emoji}</span>
-                <span class="flex-1">${skill.name}</span>
-                <button onclick="event.stopImmediatePropagation(); previewSkillInEdit('${skillId}');" class="text-cyan-400 text-xs px-3 py-1 rounded-xl bg-slate-700 hover:bg-cyan-900">预览</button>
-                <button onclick="event.stopImmediatePropagation(); editExistingSkill('${skillId}');" class="text-amber-400 text-xs px-3 py-1 rounded-xl bg-slate-700 hover:bg-amber-900">编辑</button>
-                <button onclick="event.stopImmediatePropagation(); deleteSkill('${skillId}');" class="text-rose-400 text-xs px-3 py-1 rounded-xl bg-slate-700 hover:bg-rose-900">删除</button>
+            <div class="flex items-center gap-3 bg-slate-800/60 p-3 rounded-xl border border-white/5">
+                <span class="text-2xl">${skill.emoji}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-xs truncate">${skill.name}</div>
+                    <div class="text-[9px] text-slate-500">${skill.manaCost} MP / ${skill.damage} DMG</div>
+                </div>
+                <div class="flex gap-1">
+                    <button onclick="event.stopImmediatePropagation(); previewSkillInEdit('${skillId}');" class="p-2 text-cyan-400 hover:bg-cyan-400/20 rounded-lg transition-colors">👁️</button>
+                    <button onclick="event.stopImmediatePropagation(); editExistingSkill('${skillId}');" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
+                    <button onclick="event.stopImmediatePropagation(); deleteSkill('${skillId}');" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
+                </div>
             </div>`;
     }).join('');
 }
@@ -1196,20 +1199,22 @@ function editExistingSkill(skillId) {
     if (!skill) return;
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="border border-amber-400/30 rounded-3xl p-5 mb-6">
-            <div class="text-amber-400 font-bold mb-4">编辑技能「${skill.name}」</div>
+        <div class="bg-amber-900/10 border border-amber-400/20 rounded-2xl p-5 mb-6">
+            <div class="text-amber-400 text-xs font-bold mb-4 uppercase tracking-widest">编辑技能</div>
             <div class="space-y-4">
-                <div><label class="block text-xs mb-1">图标</label><input id="new-skill-emoji" value="${skill.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                <div><label class="block text-xs mb-1">技能名称</label><input id="new-skill-name" value="${skill.name}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                <div class="grid grid-cols-3 gap-4">
-                    <div><label class="block text-xs mb-1">蓝量消耗</label><input id="new-skill-cost" type="number" value="${skill.manaCost}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">范围</label><input id="new-skill-range" type="number" value="${skill.range}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${skill.damage}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">图标</label><input id="new-skill-emoji" value="${skill.emoji}" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">名称</label><input id="new-skill-name" value="${skill.name}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
                 </div>
-                <div><label class="block text-xs mb-1">描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                <div class="flex gap-3">
-                    <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold">保存修改</button>
-                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold">取消</button>
+                <div class="grid grid-cols-3 gap-3">
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝耗</label><input id="new-skill-cost" type="number" value="${skill.manaCost}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">范围</label><input id="new-skill-range" type="number" value="${skill.range}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${skill.damage}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                </div>
+                <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+                <div class="flex gap-2">
+                    <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all">保存</button>
+                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
                 </div>
             </div>
         </div>`;
@@ -1229,25 +1234,25 @@ function confirmEditSkill(skillId) {
     renderEditForm();
 }
 
-function showAddSkillForm(skillId) {
-    const skill = GAME_CONFIG.SKILLS[skillId];
-    if (!skill) return;
+function showAddSkillForm() {
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="border border-amber-400/30 rounded-3xl p-5 mb-6">
-            <div class="text-amber-400 font-bold mb-4">编辑技能「${skill.name}」</div>
+        <div class="bg-purple-900/10 border border-purple-400/20 rounded-2xl p-5 mb-6">
+            <div class="text-purple-400 text-xs font-bold mb-4 uppercase tracking-widest">新增独立技能</div>
             <div class="space-y-4">
-                <div><label class="block text-xs mb-1">图标</label><input id="new-skill-emoji" value="${skill.emoji}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                <div><label class="block text-xs mb-1">技能名称</label><input id="new-skill-name" value="${skill.name}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                <div class="grid grid-cols-3 gap-4">
-                    <div><label class="block text-xs mb-1">蓝量消耗</label><input id="new-skill-cost" type="number" value="${skill.manaCost}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">范围</label><input id="new-skill-range" type="number" value="${skill.range}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                    <div><label class="block text-xs mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${skill.damage}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">图标</label><input id="new-skill-emoji" placeholder="✨" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">名称</label><input id="new-skill-name" placeholder="技能名" class="editor-input w-full px-4 py-2 rounded-xl"></div>
                 </div>
-                <div><label class="block text-xs mb-1">描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-3 rounded-2xl"></div>
-                <div class="flex gap-3">
-                    <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-600 hover:bg-amber-500 rounded-2xl font-bold">保存修改</button>
-                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold">取消</button>
+                <div class="grid grid-cols-3 gap-3">
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝耗</label><input id="new-skill-cost" type="number" value="4" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">范围</label><input id="new-skill-range" type="number" value="2" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">伤害</label><input id="new-skill-dmg" type="number" value="12" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                </div>
+                <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" placeholder="简短描述该技能的效果" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+                <div class="flex gap-2">
+                    <button onclick="confirmAddSkill()" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-all">确认新增</button>
+                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
                 </div>
             </div>
         </div>`;
@@ -1279,22 +1284,16 @@ function saveCurrentEdit() {
 
     unit.emoji = document.getElementById("edit-emoji").value || unit.emoji;
     unit.name = document.getElementById("edit-name").value || unit.name;
-    unit.atk = parseInt(document.getElementById("edit-atk").value) || 0;
-    unit.def = parseInt(document.getElementById("edit-def").value) || 0;
-    unit.mana = parseInt(document.getElementById("edit-mana").value) || 0;
-    unit.moveRange = parseInt(document.getElementById("edit-move").value) || 0;
-    unit.atkRange = parseInt(document.getElementById("edit-atkRange").value) || 0;
-    unit.hp = parseInt(document.getElementById("edit-hp").value) || unit.hp;
-    if (unit.maxHp) unit.maxHp = unit.hp;
 
     if (!STATE.editingUnit.isTerrain) {
+        unit.atk = parseInt(document.getElementById("edit-atk").value) || 0;
+        unit.def = parseInt(document.getElementById("edit-def").value) || 0;
+        unit.mana = parseInt(document.getElementById("edit-mana").value) || 0;
+        unit.moveRange = parseInt(document.getElementById("edit-move").value) || 0;
+        unit.atkRange = parseInt(document.getElementById("edit-atkRange").value) || 0;
+        unit.hp = parseInt(document.getElementById("edit-hp").value) || unit.hp;
+        if (unit.maxHp) unit.maxHp = unit.hp;
         unit.ultSkill = document.getElementById("edit-ult-skill").value;
-    } else {
-        unit.desc = document.getElementById("edit-desc").value;
-        unit.impassable = document.getElementById("edit-impassable").value === "true";
-        unit.temporary = document.getElementById("edit-temporary").value === "true";
-        unit.effect = document.getElementById("edit-effect").value || null;
-        unit.value = parseInt(document.getElementById("edit-value").value) || 0;
     }
 
     addLog(`✅ 已保存 <span class="text-purple-400">${unit.emoji} ${unit.name}</span> 的独立修改`, "purple");
@@ -1355,13 +1354,45 @@ function addNewUnitAtSelectedCell() {
     // 已由 createNewUnitHere 处理
 }
 
-/* UI 更新（保持不变） */
+/* UI 更新（已适配浮动面板） */
+function toggleInfoPanel(show) {
+    const wrapper = document.getElementById("info-panel-wrapper");
+    if (show) {
+        wrapper.classList.remove("translate-y-full", "sm:translate-x-full");
+        wrapper.classList.add("translate-y-0", "sm:translate-x-0");
+    } else {
+        wrapper.classList.add("translate-y-full", "sm:translate-x-full");
+        wrapper.classList.remove("translate-y-0", "sm:translate-x-0");
+    }
+}
+
 function updateSelectedPanel() {
     const panel = document.getElementById("selected-panel");
-    if (!STATE.selected) { panel.classList.add("hidden"); return; }
+    const editor = document.getElementById("editor-panel");
+
+    if (!STATE.selected) {
+        if (!STATE.editMode) {
+            panel.classList.add("hidden");
+            toggleInfoPanel(false);
+        }
+        return;
+    }
 
     const entity = getUnit(STATE.selected.team, STATE.selected.id);
-    if (!entity) { panel.classList.add("hidden"); return; }
+    if (!entity) {
+        if (!STATE.editMode) {
+            panel.classList.add("hidden");
+            toggleInfoPanel(false);
+        }
+        return;
+    }
+
+    // 确保显示信息面板而非编辑器（非编辑模式下）
+    if (!STATE.editMode) {
+        panel.classList.remove("hidden");
+        editor.classList.add("hidden");
+        toggleInfoPanel(true);
+    }
 
     const isTerrain = STATE.selected.team === "terrain";
     const isFriendly = STATE.selected.team === "friendly";
@@ -1370,53 +1401,50 @@ function updateSelectedPanel() {
     document.getElementById("selected-name").textContent = entity.name;
 
     if (isTerrain) {
-        document.getElementById("selected-team").innerHTML = `<span class="bg-slate-400 text-white px-3 py-0.5 rounded-full text-xs">地形</span>`;
+        document.getElementById("selected-team").innerHTML = `<span class="bg-slate-500/30 text-slate-300 border border-slate-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">地形</span>`;
         document.getElementById("unit-stats").classList.add("hidden");
         document.getElementById("skill-selection").classList.add("hidden");
         document.getElementById("terrain-desc").classList.remove("hidden");
-        document.getElementById("terrain-desc-text").innerHTML = entity.desc || "";
+        document.getElementById("terrain-desc-text").innerHTML = entity.desc || "无特殊描述";
     } else {
         document.getElementById("selected-team").innerHTML = isFriendly
-            ? `<span class="bg-emerald-400 text-white px-3 py-0.5 rounded-full text-xs">友方</span>`
-            : `<span class="bg-rose-400 text-white px-3 py-0.5 rounded-full text-xs">敌方</span>`;
+            ? `<span class="bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">友方单位</span>`
+            : `<span class="bg-rose-500/30 text-rose-400 border border-rose-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">敌方单位</span>`;
         document.getElementById("unit-stats").classList.remove("hidden");
         document.getElementById("terrain-desc").classList.add("hidden");
 
         const hpPercent = Math.max(0, Math.round((entity.hp / entity.maxHp) * 100));
-        document.getElementById("selected-hp-fill").style.width = hpPercent + "%";
-        document.getElementById("selected-hp-fill").className = `hp-fill ${isFriendly ? "bg-emerald-400" : "bg-rose-400"}`;
-        document.getElementById("selected-hp-text").innerHTML = `${entity.hp} / ${entity.maxHp}`;
+        const hpFill = document.getElementById("selected-hp-fill");
+        hpFill.style.width = hpPercent + "%";
+        hpFill.className = `hp-fill ${isFriendly ? "bg-gradient-to-r from-emerald-600 to-emerald-400" : "bg-gradient-to-r from-rose-600 to-rose-400"}`;
+        document.getElementById("selected-hp-text").innerHTML = `${entity.hp} <span class="opacity-40">/</span> ${entity.maxHp}`;
 
-        // 在 unit-stats 区域替换原来的属性显示
+        const atkBonus = EFFECT_HANDLERS.getEffectiveStat(entity,'atk');
         document.getElementById("selected-atk").innerHTML = `
             ${getEffectiveAtk(entity)}
-            <span class="text-xs ${EFFECT_HANDLERS.getEffectiveStat(entity,'atk') > 0 ? 'text-amber-400' : 'text-rose-400'}">
-                (${EFFECT_HANDLERS.getEffectiveStat(entity,'atk') > 0 ? '+' : ''}${EFFECT_HANDLERS.getEffectiveStat(entity,'atk')})
-            </span>`;
+            ${atkBonus !== 0 ? `<span class="text-xs ${atkBonus > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">(${atkBonus > 0 ? '+' : ''}${atkBonus})</span>` : ''}`;
 
+        const defBonus = EFFECT_HANDLERS.getEffectiveStat(entity,'def');
         document.getElementById("selected-def").innerHTML = `
             ${getEffectiveDef(entity)}
-            <span class="text-xs ${EFFECT_HANDLERS.getEffectiveStat(entity,'def') > 0 ? 'text-sky-400' : 'text-rose-400'}">
-                (${EFFECT_HANDLERS.getEffectiveStat(entity,'def') > 0 ? '+' : ''}${EFFECT_HANDLERS.getEffectiveStat(entity,'def')})
-            </span>`;
+            ${defBonus !== 0 ? `<span class="text-xs ${defBonus > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">(${defBonus > 0 ? '+' : ''}${defBonus})</span>` : ''}`;
 
-        // 移动范围和攻击范围同理
         const effMove = getEffectiveMoveRange(entity);
         document.getElementById("selected-remaining-move").innerHTML = `
-            <span class="text-emerald-400">${effMove}</span> / ${entity.moveRange}
-            ${effMove !== entity.moveRange ? `<span class="text-xs text-cyan-400">(${effMove > entity.moveRange ? '+' : ''}${effMove - entity.moveRange})</span>` : ''}`;
+            <span class="text-emerald-400">${effMove}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.moveRange}</span>`;
 
         const effRange = getEffectiveAtkRange(entity);
         document.getElementById("selected-range").innerHTML = `
             <span class="text-rose-400">${effRange}</span>
-            ${effRange !== entity.atkRange ? `<span class="text-xs text-cyan-400">(${effRange > entity.atkRange ? '+' : ''}${effRange - entity.atkRange})</span>` : ''}`;
-        document.getElementById("selected-mana").innerHTML = `<span class="text-cyan-400">${entity.currentMana}</span> / ${entity.maxMana}`;
+            ${effRange !== entity.atkRange ? `<span class="text-xs text-cyan-400 font-bold">(${effRange > entity.atkRange ? '+' : ''}${effRange - entity.atkRange})</span>` : ''}`;
+
+        document.getElementById("selected-mana").innerHTML = `
+            <span class="text-cyan-400">${entity.currentMana}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.maxMana}</span>`;
 
         const skillDiv = document.getElementById("skill-selection");
         const skillsList = document.getElementById("skills-list");
         const titleEl = document.getElementById("skill-title");
 
-        // 显示当前所有效果
         const effectsContainer = document.getElementById("active-effects-list");
         effectsContainer.innerHTML = "";
 
@@ -1425,20 +1453,20 @@ function updateSelectedPanel() {
                 const template = EFFECT_LIBRARY[eff.id];
                 if (!template) return;
                 const div = document.createElement("div");
-                div.className = `px-3 py-1 rounded-2xl text-xs flex items-center gap-1 bg-${template.color}-900/30 text-${template.color}-300`;
-                div.innerHTML = `${template.emoji} ${template.name} <span class="font-mono text-[10px] opacity-70">(${eff.remainingTurns})</span>`;
+                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${template.color}-500/20 text-${template.color}-300 border border-${template.color}-500/30`;
+                div.innerHTML = `${template.emoji} ${template.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
                 effectsContainer.appendChild(div);
             });
         } else {
-            effectsContainer.innerHTML = `<span class="text-slate-500 text-xs">无效果</span>`;
+            effectsContainer.innerHTML = `<span class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">无活动效果</span>`;
         }
 
         skillDiv.classList.remove("hidden");
         skillsList.innerHTML = "";
 
         titleEl.innerHTML = isFriendly
-            ? `<span class="text-cyan-400">🔵</span> 技能选择（点击激活）`
-            : `<span class="text-rose-400">🔴</span> 敌方技能（点击预览范围）`;
+            ? `<span class="text-cyan-400">⚡</span> 技能指令`
+            : `<span class="text-rose-400">👁️</span> 技能预览`;
 
         const skillIds = (entity.normalSkills || []).concat(entity.ultSkill ? [entity.ultSkill] : []);
 
@@ -1447,12 +1475,16 @@ function updateSelectedPanel() {
             if (!skill) return;
             const canUse = entity.currentMana >= skill.manaCost;
             const btn = document.createElement("button");
-            btn.className = `flex items-center gap-3 px-4 py-3 rounded-2xl text-left w-full ${isFriendly && canUse ? "bg-cyan-900/40 hover:bg-cyan-800 text-cyan-200" : "bg-slate-800/50 hover:bg-slate-700 text-slate-200"}`;
+            btn.className = `flex items-center gap-4 px-5 py-4 rounded-2xl text-left w-full transition-all active:scale-[0.98] ${isFriendly && canUse ? "bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-100" : "bg-slate-800/40 hover:bg-slate-800/60 border border-white/5 text-slate-300"}`;
             btn.innerHTML = `
-                <span class="text-3xl">${skill.emoji}</span>
+                <span class="text-4xl filter drop-shadow-lg">${skill.emoji}</span>
                 <div class="flex-1">
-                    <div class="font-bold">${skill.name}</div>
-                    <div class="text-[10px] text-cyan-300">${skill.desc} • <span class="font-mono">${skill.manaCost}🔵</span> • 伤害 ${skill.damage}</div>
+                    <div class="font-bold flex justify-between items-center">
+                        <span>${skill.name}</span>
+                        <span class="font-mono text-xs text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded">${skill.manaCost} MP</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1 leading-tight">${skill.desc}</div>
+                    <div class="text-[10px] font-bold text-rose-400/70 mt-1 uppercase tracking-tighter">威力 ${skill.damage} • 射程 ${skill.range}</div>
                 </div>
             `;
             btn.onclick = () => {
@@ -1462,7 +1494,7 @@ function updateSelectedPanel() {
                     if (STATE.previewTimeout) clearTimeout(STATE.previewTimeout);
                     highlightSkillRange(entity, skillId);
                     STATE.previewTimeout = setTimeout(() => renderBoard(), 2800);
-                    addLog(`预览敌方技能范围：${skill.emoji} ${skill.name}`, "cyan");
+                    addLog(`预览${isFriendly ? '友方' : '敌方'}技能范围：${skill.emoji} ${skill.name}`, "cyan");
                 }
             };
             skillsList.appendChild(btn);
@@ -1473,24 +1505,28 @@ function updateSelectedPanel() {
 
 function updateAllLists() {
     const fList = document.getElementById("friendly-list");
+    if (!fList) return;
     fList.innerHTML = "";
     STATE.friendlyUnits.forEach(u => {
         if (u.hp <= 0) return;
         const percent = Math.round((u.hp / u.maxHp) * 100);
         const div = document.createElement("div");
-        div.className = "flex items-center gap-3 bg-emerald-900/30 px-3 py-2 rounded-2xl text-xs";
-        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-emerald-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
+        div.className = "flex items-center gap-3 bg-emerald-900/30 px-3 py-2 rounded-2xl text-xs cursor-pointer hover:bg-emerald-900/50 transition-colors";
+        div.onclick = () => selectUnit("friendly", u.id);
+        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-emerald-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}</span>`;
         fList.appendChild(div);
     });
 
     const eList = document.getElementById("enemy-list");
+    if (!eList) return;
     eList.innerHTML = "";
     STATE.enemyUnits.forEach(u => {
         if (u.hp <= 0) return;
         const percent = Math.round((u.hp / u.maxHp) * 100);
         const div = document.createElement("div");
-        div.className = "flex items-center gap-3 bg-rose-900/30 px-3 py-2 rounded-2xl text-xs";
-        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-rose-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
+        div.className = "flex items-center gap-3 bg-rose-900/30 px-3 py-2 rounded-2xl text-xs cursor-pointer hover:bg-rose-900/50 transition-colors";
+        div.onclick = () => selectUnit("enemy", u.id);
+        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-rose-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}</span>`;
         eList.appendChild(div);
     });
 }
@@ -1499,11 +1535,15 @@ function checkGameOver() { if (STATE.friendlyUnits.every(u => u.hp <= 0)) setTim
 function updateUI() {
     const turnEl = document.getElementById("turn-team");
     turnEl.innerHTML = STATE.currentTurn === "player" ? "🟦 玩家回合" : "🔴 敌方回合";
-    turnEl.className = `turn-indicator ${STATE.currentTurn === "player" ? "text-emerald-400" : "text-rose-400"}`;
+    turnEl.className = `turn-indicator font-black ${STATE.currentTurn === "player" ? "text-emerald-400" : "text-rose-400"}`;
     document.getElementById("turn-number").textContent = String(STATE.turnCount).padStart(2, "0");
     document.getElementById("log-turn").textContent = STATE.turnCount;
-    document.getElementById("end-turn-btn").disabled = STATE.currentTurn !== "player";
+    const endBtn = document.getElementById("end-turn-btn");
+    endBtn.disabled = STATE.currentTurn !== "player";
+    endBtn.style.opacity = STATE.currentTurn === "player" ? "1" : "0.5";
+    endBtn.style.filter = STATE.currentTurn === "player" ? "" : "grayscale(1)";
 }
+
 function showResult(isWin) {
     const modal = document.getElementById("result-modal");
     modal.classList.remove("hidden");
