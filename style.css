@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap');
+
+body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background-color: #020617;
+    color: #cbd5e1;
+    overflow-x: hidden;
+    user-select: none;
+}
+
+.glass-panel {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+}
+
+.grid-cell {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1/1;
+    /* 增强格子边缘视觉分离度 */
+    border: 2px solid rgba(148, 163, 184, 0.15);
+}
+
+.grid-cell:hover {
+    filter: brightness(1.15);
+}
+
+.highlight-move {
+    background: rgba(16, 185, 129, 0.45) !important;
+    box-shadow: 0 0 0 4px rgb(16 185 129) inset;
+    animation: movePulse 2s infinite;
+}
+
+.highlight-attack {
+    background: rgba(239, 68, 68, 0.68) !important;
+    box-shadow: 0 0 0 6px rgb(239 68 68) inset;
+    animation: attackPulse 2s infinite;
+}
+
+.highlight-skill {
+    background: rgba(165, 243, 252, 0.68) !important;
+    box-shadow: 0 0 0 6px rgb(165 243 252) inset;
+    animation: attackPulse 2s infinite;
+}
+
+.highlight-overlap {
+    background: rgba(16, 185, 129, 0.45) !important;
+    animation: overlapFlicker 1s infinite alternate ease-in-out;
+}
+
+.highlight-edit {
+    box-shadow: 0 0 0 8px rgb(168 85 247) inset !important;
+    animation: editPulse 1.5s infinite;
+}
+
+@keyframes overlapFlicker {
+    0% {
+        background: rgba(16, 185, 129, 0.45) !important;
+        box-shadow: 0 0 0 4px rgb(16 185 129) inset;
+    }
+    100% {
+        background: rgba(239, 68, 68, 0.68) !important;
+        box-shadow: 0 0 0 6px rgb(239 68 68) inset;
+    }
+}
+
+@keyframes editPulse {
+    0%, 100% {
+        opacity: 1
+    }
+    50% {
+        opacity: 0.65
+    }
+}
+
+@keyframes movePulse {
+    0%, 100% {
+        opacity: 1
+    }
+    50% {
+        opacity: 0.65
+    }
+}
+
+@keyframes attackPulse {
+    0%, 100% {
+        opacity: 1
+    }
+    50% {
+        opacity: 0.55
+    }
+}
+
+.unit-cell::before {
+    content: attr(data-combat);
+    font-size: clamp(1.8rem, 5vw, 2.35rem);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    /* 关键：完美居中 */
+    filter: drop-shadow(0 10px 8px rgb(0 0 0 / 0.5));
+    z-index: 20;
+    pointer-events: none;
+    line-height: 1;
+}
+
+.unit-cell::after {
+    content: attr(data-terrain);
+    font-size: clamp(1.25rem, 3.2vw, 1.65rem);
+    position: absolute;
+    bottom: 12%;
+    right: 12%;
+    filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.4));
+    z-index: 10;
+    pointer-events: none;
+    opacity: 0.95;
+    line-height: 1;
+}
+
+.hp-bar {
+    height: 8px;
+    background: #1e2937;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.hp-fill {
+    height: 100%;
+    transition: width 0.4s ease;
+}
+
+.turn-indicator {
+    animation: pulse-turn 2s infinite;
+}
+
+.editor-input {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ====================== 动画层 ====================== */
+#animation-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 30;
+    overflow: hidden;
+}
