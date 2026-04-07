@@ -557,7 +557,7 @@ function updateCellContent(cell, row, col) {
     // 【关键】每次都先清除所有可能的高亮类
     cell.classList.remove(
         "highlight-move", "highlight-attack", "highlight-overlap",
-        "highlight-skill", "highlight-edit"
+        "highlight-skill", "highlight-edit", "unit-acted"
     );
     cell.style.boxShadow = "";   // 清除自定义阴影
 
@@ -567,6 +567,11 @@ function updateCellContent(cell, row, col) {
         cell.style.background = combatTeam === "friendly"
             ? "rgba(16, 185, 129, 0.18)"
             : "rgba(239, 68, 68, 0.18)";
+
+        // 标记已行动单位
+        if (combatUnit.hasAttacked) {
+            cell.classList.add("unit-acted");
+        }
     } else {
         cell.removeAttribute("data-combat");
         cell.style.background = "";
@@ -1383,8 +1388,9 @@ function updateSelectedPanel() {
         document.getElementById("terrain-desc").classList.add("hidden");
 
         const hpPercent = Math.max(0, Math.round((entity.hp / entity.maxHp) * 100));
-        document.getElementById("selected-hp-fill").style.width = hpPercent + "%";
-        document.getElementById("selected-hp-fill").className = `hp-fill ${isFriendly ? "bg-emerald-400" : "bg-rose-400"}`;
+        const fillEl = document.getElementById("selected-hp-fill");
+        fillEl.style.width = hpPercent + "%";
+        fillEl.className = `hp-fill ${isFriendly ? "hp-fill-friendly" : "hp-fill-enemy"}`;
         document.getElementById("selected-hp-text").innerHTML = `${entity.hp} / ${entity.maxHp}`;
 
         // 在 unit-stats 区域替换原来的属性显示
@@ -1479,7 +1485,7 @@ function updateAllLists() {
         const percent = Math.round((u.hp / u.maxHp) * 100);
         const div = document.createElement("div");
         div.className = "flex items-center gap-3 bg-emerald-900/30 px-3 py-2 rounded-2xl text-xs";
-        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-emerald-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
+        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill hp-fill-friendly" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
         fList.appendChild(div);
     });
 
@@ -1490,7 +1496,7 @@ function updateAllLists() {
         const percent = Math.round((u.hp / u.maxHp) * 100);
         const div = document.createElement("div");
         div.className = "flex items-center gap-3 bg-rose-900/30 px-3 py-2 rounded-2xl text-xs";
-        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill bg-rose-400" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
+        div.innerHTML = `<span class="text-2xl">${u.emoji}</span><div class="flex-1"><div class="font-medium">${u.name}</div><div class="hp-bar w-full"><div class="hp-fill hp-fill-enemy" style="width:${percent}%"></div></div></div><span class="font-mono">${u.hp}/${u.maxHp}</span>`;
         eList.appendChild(div);
     });
 }
