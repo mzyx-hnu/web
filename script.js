@@ -2,7 +2,7 @@
  * ====================== 配置模块（GAME_CONFIG）======================
  * 只作为模板，所有单位/地形在创建时深度复制，实现完全独立编辑
  */
-const GAME_CONFIG = {
+export const GAME_CONFIG = {
     UNIT_TYPES: {
         knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["vampiricStrike", "shieldBash"], ultSkill: "commanderAura", isTerrain: false },
         archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "plagueBolt"], ultSkill: "ultimateStrike", isTerrain: false },
@@ -75,7 +75,7 @@ const GAME_CONFIG = {
 /**
  * ====================== 【重构版】组件化效果系统 ======================
  */
-const EFFECT_LIBRARY = {
+export const EFFECT_LIBRARY = {
     poison: {
         id: "poison", name: "中毒", emoji: "☠️", color: "emerald", duration: 3, stackable: true,
         desc: "每回合结束受到伤害，数值随层数叠加",
@@ -164,7 +164,7 @@ const EFFECT_LIBRARY = {
 /**
  * 效果组件处理器 - 预留接口，支持未来通过代码注册新组件
  */
-const COMPONENT_PROCESSORS = {
+export const COMPONENT_PROCESSORS = {
     tick: (unit, eff, params) => {
         const stacks = eff.stacks || 1;
         if (params.damage) {
@@ -224,7 +224,7 @@ const COMPONENT_PROCESSORS = {
 /**
  * 效果处理器核心
  */
-const EFFECT_HANDLERS = {
+export const EFFECT_HANDLERS = {
     // 统一获取配置（如果实例有自定义组件则用实例的，否则用库模板的）
     getConfig(eff) {
         const template = EFFECT_LIBRARY[eff.id] || {};
@@ -410,7 +410,7 @@ const EFFECT_HANDLERS = {
  * @param {string|Object} effectData 效果ID或完整效果配置对象
  * @param {number} customDuration 可选持续回合
  */
-function applyEffect(unit, effectData, customDuration = null) {
+export function applyEffect(unit, effectData, customDuration = null) {
     if (!unit.activeEffects) unit.activeEffects = [];
 
     // 如果是对象，则视为实例副本；如果是字符串，则视为引用 ID
@@ -478,7 +478,7 @@ function compareEffectStrength(oldEff, newEff) {
     return getPower(cNew) > getPower(cOld);
 }
 
-function tickAllEffects() {
+export function tickAllEffects() {
     [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(unit => {
         if (!unit.activeEffects || unit.hp <= 0) return;
 
@@ -496,16 +496,16 @@ function tickAllEffects() {
     });
 }
 
-function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getStatModifier(unit, "atk").total; }
-function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getStatModifier(unit, "def").total; }
-function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange + EFFECT_HANDLERS.getStatModifier(unit, "move").total); }
-function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange + EFFECT_HANDLERS.getStatModifier(unit, "range").total); }
+export function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getStatModifier(unit, "atk").total; }
+export function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getStatModifier(unit, "def").total; }
+export function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange + EFFECT_HANDLERS.getStatModifier(unit, "move").total); }
+export function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange + EFFECT_HANDLERS.getStatModifier(unit, "range").total); }
 
 /**
  * 【架构重构】GameState 类 - 统一管理所有游戏状态
  * 方便后续添加 Undo/Redo、保存/加载等功能
  */
-class GameState {
+export class GameState {
     constructor() {
         this.friendlyUnits = [];
         this.enemyUnits = [];
@@ -538,12 +538,12 @@ class GameState {
 }
 
 // 全局实例（替代原来的 STATE）
-let STATE = new GameState();
+export let STATE = new GameState();
 
 /**
  * 【架构重构】AnimationManager 单例 - 统一管理所有动画
  */
-const AnimationManager = {
+export const AnimationManager = {
     getCellCenter(row, col) {
         const cell = document.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
         if (!cell) return { x: 0, y: 0 };
@@ -707,7 +707,7 @@ const AnimationManager = {
 /**
  * 【架构重构】Skill 类 - 为未来 Buff/Debuff 做准备
  */
-class Skill {
+export class Skill {
     constructor(id, config) {
         this.id = id;
         Object.assign(this, config); // emoji, name, manaCost, range, damage, desc
@@ -719,7 +719,7 @@ class Skill {
 }
 
 // 把 GAME_CONFIG.SKILLS 转换为 Skill 实例（在 initGame 前调用）
-function initializeSkills() {
+export function initializeSkills() {
     Object.keys(GAME_CONFIG.SKILLS).forEach(key => {
         GAME_CONFIG.SKILLS[key] = new Skill(key, GAME_CONFIG.SKILLS[key]);
     });
@@ -732,7 +732,7 @@ function initializeSkills() {
 let cellCache = new Map(); // key: `${row},${col}` → DOM 元素
 
 /* ====================== 辅助函数（保持不变） ====================== */
-function addLog(message, color = "slate") {
+export function addLog(message, color = "slate") {
     const container = document.getElementById("log-container");
     const div = document.createElement("div");
     div.className = `px-3 py-2 rounded-xl bg-slate-800/50 border-l-4 border-${color}-400`;
@@ -742,12 +742,12 @@ function addLog(message, color = "slate") {
     if (container.children.length > 9) container.removeChild(container.children[0]);
 }
 
-function getUnit(team, id) {
+export function getUnit(team, id) {
     if (team === "terrain") return STATE.terrainUnits.find(u => u.id === id);
     return STATE[team + "Units"].find(u => u.id === id);
 }
 
-function createCombatUnit(base) {
+export function createCombatUnit(base) {
     const template = GAME_CONFIG.UNIT_TYPES[base.type];
     return {
         id: base.id,
@@ -1061,7 +1061,7 @@ function highlightSkillRange(unit, skillId) {
     });
 }
 
-function calculateReachable(startRow, startCol, maxMove, unit) {
+export function calculateReachable(startRow, startCol, maxMove, unit) {
     const directions = [[-1,0],[1,0],[0,-1],[0,1]];
     const distMap = {};
     const queue = [{r: startRow, c: startCol, dist: 0}];
@@ -1251,7 +1251,7 @@ function selectUnit(team, id) {
     updateSelectedPanel();
 }
 
-function deselectUnit() {
+export function deselectUnit() {
     STATE.selected = null;
     STATE.selectedSkill = null;
     renderBoard();
@@ -1335,7 +1335,7 @@ function handleCellClick(row, col) {
 }
 
 /* ====================== 编辑模式核心（支持空格子新增/复制 + 位置移动） ====================== */
-function toggleEditMode() {
+export function toggleEditMode() {
     STATE.editMode = !STATE.editMode;
     const btn = document.getElementById("edit-mode-btn");
     const icon = document.getElementById("edit-icon");
@@ -1356,7 +1356,7 @@ function toggleEditMode() {
     }
 }
 
-function exitEditMode() {
+export function exitEditMode() {
     STATE.editMode = false;
     STATE.editingUnit = null;
     const btn = document.getElementById("edit-mode-btn");
@@ -1425,12 +1425,12 @@ function handleEditClick(row, col) {
 /**
  * 编辑器导航系统
  */
-function pushEditorState(renderFn, ...args) {
+export function pushEditorState(renderFn, ...args) {
     STATE.editorHistory.push({ renderFn, args });
     renderFn(...args);
 }
 
-function popEditorState() {
+export function popEditorState() {
     if (STATE.editorHistory.length <= 1) {
         STATE.editorHistory = [];
         renderEditForm();
@@ -1585,7 +1585,7 @@ function renderGlobalEffectEditorLink() {
     document.getElementById("edit-unit-form").appendChild(container);
 }
 
-function showGlobalEffectEditor() {
+export function showGlobalEffectEditor() {
     const container = document.getElementById("edit-unit-form");
     const html = `
         <div class="bg-slate-900 border border-purple-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
@@ -1619,14 +1619,14 @@ function showGlobalEffectEditor() {
     container.innerHTML = html;
 }
 
-function deleteGlobalEffect(id) {
+export function deleteGlobalEffect(id) {
     if (confirm(`确定要从库中删除状态「${EFFECT_LIBRARY[id].name}」吗？已经绑定的单位可能会失效。`)) {
         delete EFFECT_LIBRARY[id];
         showGlobalEffectEditor();
     }
 }
 
-function showCreateEffectForm(options = {}) {
+export function showCreateEffectForm(options = {}) {
     const {
         fromBinding = false,
         isInstance = false,
@@ -1789,7 +1789,7 @@ function showCreateEffectForm(options = {}) {
     `;
 }
 
-function confirmCreateEffect() {
+export function confirmCreateEffect() {
     const id = document.getElementById("new-eff-id").value || ("eff_" + Date.now());
     const name = document.getElementById("new-eff-name").value || "新状态";
     const emoji = document.getElementById("new-eff-emoji").value || "✨";
@@ -1905,7 +1905,7 @@ function renderEffectBindingList(unit) {
     }).join("");
 }
 
-function showAddEffectToUnitForm() {
+export function showAddEffectToUnitForm() {
     STATE.editingSkillId = null;
     const container = document.getElementById("edit-unit-form");
     const html = `
@@ -1928,7 +1928,7 @@ function showAddEffectToUnitForm() {
     container.innerHTML = html;
 }
 
-function confirmBindEffect(effectId) {
+export function confirmBindEffect(effectId) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (STATE.editingUnit.isTerrain) {
         const isTrigger = confirm("是否将其设为「触发型」效果？\n确定：单位踩上去后获得该状态（离开后仍持续数回合）\n取消：单位站在此处时生效（离开后立刻消失）");
@@ -1946,7 +1946,7 @@ function confirmBindEffect(effectId) {
     popEditorState();
 }
 
-function editBoundEffect(index) {
+export function editBoundEffect(index) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     const effects = STATE.editingUnit.isTerrain
         ? (unit.effectConfig ? [unit.effectConfig] : [{ id: unit.effectId }])
@@ -1971,7 +1971,7 @@ function editBoundEffect(index) {
     });
 }
 
-function removeEffectFromUnit(index) {
+export function removeEffectFromUnit(index) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (STATE.editingUnit.isTerrain) {
         unit.effectId = null;
@@ -1984,7 +1984,7 @@ function removeEffectFromUnit(index) {
 /**
  * 应用选中的地形预设（切换地形类型）
  */
-function applyTerrainPreset(newType) {
+export function applyTerrainPreset(newType) {
     if (!STATE.editingUnit || !STATE.editingUnit.id) return;
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (!unit) return;
@@ -2018,7 +2018,7 @@ function renderTerrainPresetList(currentUnit) {
     }).join('');
 }
 
-function quickSetEmoji(emoji) {
+export function quickSetEmoji(emoji) {
     const input = document.getElementById("edit-emoji");
     if (input) input.value = emoji;
 }
@@ -2048,7 +2048,7 @@ function renderCurrentNormalSkills() {
     }).join('');
 }
 
-function previewSkillInEdit(skillId) {
+export function previewSkillInEdit(skillId) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     highlightSkillRange(unit, skillId);
     if (STATE.previewTimeout) clearTimeout(STATE.previewTimeout);
@@ -2056,13 +2056,13 @@ function previewSkillInEdit(skillId) {
     addLog(`预览技能范围：${GAME_CONFIG.SKILLS[skillId].emoji} ${GAME_CONFIG.SKILLS[skillId].name}`, "cyan");
 }
 
-function deleteSkill(skillId) {
+export function deleteSkill(skillId) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     unit.normalSkills = unit.normalSkills.filter(s => s !== skillId);
     renderEditForm();
 }
 
-function editExistingSkill(skillId) {
+export function editExistingSkill(skillId) {
     const skill = GAME_CONFIG.SKILLS[skillId];
     if (!skill) return;
     const container = document.getElementById("edit-unit-form");
@@ -2140,7 +2140,7 @@ function renderSkillEffectBinding(skillId) {
     }).join("");
 }
 
-function showAddEffectToSkillForm(skillId, type) {
+export function showAddEffectToSkillForm(skillId, type) {
     STATE.editingSkillId = skillId;
     const container = document.getElementById("edit-unit-form");
     const html = `
@@ -2162,7 +2162,7 @@ function showAddEffectToSkillForm(skillId, type) {
     container.innerHTML = html;
 }
 
-function editSkillEffect(skillId, index, type) {
+export function editSkillEffect(skillId, index, type) {
     const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
     if (!skill) return;
     const effects = (type === 'target') ? (skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [])) : (skill.selfEffects || []);
@@ -2188,7 +2188,7 @@ function editSkillEffect(skillId, index, type) {
     });
 }
 
-function confirmBindEffectToSkill(skillId, type) {
+export function confirmBindEffectToSkill(skillId, type) {
     const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
     const id = document.getElementById(`new-skill-eff-id-${type}`).value;
     const duration = parseInt(document.getElementById(`new-skill-eff-dur-${type}`).value) || 3;
@@ -2206,7 +2206,7 @@ function confirmBindEffectToSkill(skillId, type) {
     popEditorState();
 }
 
-function removeEffectFromSkill(skillId, index, type) {
+export function removeEffectFromSkill(skillId, index, type) {
     const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
     if (type === 'target') {
         if (skill.targetEffects) skill.targetEffects.splice(index, 1);
@@ -2219,7 +2219,7 @@ function removeEffectFromSkill(skillId, index, type) {
     else renderSkillEffectBinding(skillId);
 }
 
-function confirmEditSkill(skillId) {
+export function confirmEditSkill(skillId) {
     const skill = GAME_CONFIG.SKILLS[skillId];
     skill.emoji = document.getElementById("new-skill-emoji").value;
     skill.name = document.getElementById("new-skill-name").value;
@@ -2232,7 +2232,7 @@ function confirmEditSkill(skillId) {
     popEditorState();
 }
 
-function showAddSkillForm(isInit = true) {
+export function showAddSkillForm(isInit = true) {
     if (isInit && !STATE.tempNewSkill) {
         STATE.tempNewSkill = {
             emoji: "✨",
@@ -2275,7 +2275,7 @@ function showAddSkillForm(isInit = true) {
     renderSkillEffectBinding('temp');
 }
 
-function syncTempSkill() {
+export function syncTempSkill() {
     const s = STATE.tempNewSkill;
     s.emoji = document.getElementById("new-skill-emoji").value;
     s.name = document.getElementById("new-skill-name").value;
@@ -2285,7 +2285,7 @@ function syncTempSkill() {
     s.desc = document.getElementById("new-skill-desc").value;
 }
 
-function confirmAddSkill() {
+export function confirmAddSkill() {
     syncTempSkill();
     const s = STATE.tempNewSkill;
     const { emoji, name, manaCost, range, damage, desc, targetEffects, selfEffects } = s;
@@ -2301,7 +2301,7 @@ function confirmAddSkill() {
     popEditorState();
 }
 
-function saveCurrentEdit() {
+export function saveCurrentEdit() {
     if (!STATE.editingUnit || STATE.editingUnit.pendingAdd) return;
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
 
@@ -2325,7 +2325,7 @@ function saveCurrentEdit() {
     updateAllLists();
 }
 
-function deleteCurrentUnit() {
+export function deleteCurrentUnit() {
     if (!STATE.editingUnit || STATE.editingUnit.pendingAdd) return;
     if (STATE.editingUnit.team === "terrain") STATE.terrainUnits = STATE.terrainUnits.filter(t => t.id !== STATE.editingUnit.id);
     else if (STATE.editingUnit.team === "friendly") STATE.friendlyUnits = STATE.friendlyUnits.filter(u => u.id !== STATE.editingUnit.id);
@@ -2338,7 +2338,7 @@ function deleteCurrentUnit() {
     renderEditForm();
 }
 
-function copySelectedUnit() {
+export function copySelectedUnit() {
     if (!STATE.editingUnit || STATE.editingUnit.pendingAdd) return;
     const sourceUnit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (!sourceUnit) return;
@@ -2349,7 +2349,7 @@ function copySelectedUnit() {
     renderEditForm();
 }
 
-function createNewUnitHere(team) {
+export function createNewUnitHere(team) {
     if (!STATE.editingUnit || !STATE.editingUnit.pendingAdd) return;
     const row = STATE.editingUnit.row;
     const col = STATE.editingUnit.col;
@@ -2373,7 +2373,7 @@ function createNewUnitHere(team) {
     renderEditForm();
 }
 
-function addNewUnitAtSelectedCell() {
+export function addNewUnitAtSelectedCell() {
     // 已由 createNewUnitHere 处理
 }
 
@@ -2652,7 +2652,7 @@ function updateUI() {
 /**
  * ====================== Tooltip 气泡系统 ======================
  */
-const TooltipManager = {
+export const TooltipManager = {
     timer: null,
     activeAnchor: null,
 
@@ -2710,7 +2710,7 @@ const TooltipManager = {
     }
 };
 
-function showStatDetail(event, unit, statName, statLabel) {
+export function showStatDetail(event, unit, statName, statLabel) {
     const modData = EFFECT_HANDLERS.getStatModifier(unit, statName);
     const baseValue = (statName === "atk") ? unit.atk :
                      (statName === "def") ? unit.def :
@@ -2741,7 +2741,7 @@ function showStatDetail(event, unit, statName, statLabel) {
     TooltipManager.show(event.currentTarget, content);
 }
 
-function showStatusDetail(event, eff, isAura = false) {
+export function showStatusDetail(event, eff, isAura = false) {
     const config = EFFECT_HANDLERS.getConfig(eff);
     const comps = config.components;
 
@@ -2809,9 +2809,9 @@ function showResult(isWin) {
         textEl.innerHTML = `你的部队全军覆没…<br>下次再战！`;
     }
 }
-function hideModal() { document.getElementById("result-modal").classList.add("hidden"); }
+export function hideModal() { document.getElementById("result-modal").classList.add("hidden"); }
 
-function exportBoard() {
+export function exportBoard() {
     const exportData = {
         unitTypes: GAME_CONFIG.UNIT_TYPES,
         skills: GAME_CONFIG.SKILLS,
@@ -2837,7 +2837,7 @@ function exportBoard() {
     }
 }
 
-function handleImport(e) {
+export function handleImport(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -2983,7 +2983,7 @@ function finishEnemyTurn() {
     addLog("✅ 敌方回合结束，轮到你了！", "emerald");
 }
 
-function endPlayerTurn() {
+export function endPlayerTurn() {
     if (STATE.currentTurn !== "player") return;
     deselectUnit();
     applyManaRegen("friendly");
@@ -3033,7 +3033,7 @@ function generatePowerUp() {
     addLog(`生成新地形 <span class="text-cyan-400">${template.emoji} ${template.name}</span>`, "cyan");
 }
 
-function resetGame() {
+export function resetGame() {
     STATE.reset();   // 使用类方法
 
     STATE.friendlyUnits = GAME_CONFIG.INITIAL.friendly.map(createCombatUnit);
@@ -3061,9 +3061,58 @@ function resetGame() {
     cellCache.clear();
 }
 
-function initGame() {
+export function initGame() {
     initializeSkills();   // 初始化 Skill 类
     resetGame();
 }
 
-window.onload = initGame;
+// 暴露到全局以便 HTML 中的 onclick 能够访问
+if (typeof window !== 'undefined') {
+    Object.assign(window, {
+        endPlayerTurn,
+        resetGame,
+        exportBoard,
+        handleImport,
+        toggleEditMode,
+        exitEditMode,
+        addNewUnitAtSelectedCell,
+        copySelectedUnit,
+        deselectUnit,
+        hideModal,
+        saveCurrentEdit,
+        deleteCurrentUnit,
+        createNewUnitHere,
+        applyTerrainPreset,
+        quickSetEmoji,
+        previewSkillInEdit,
+        deleteSkill,
+        confirmEditSkill,
+        confirmAddSkill,
+        confirmCreateEffect,
+        confirmBindEffect,
+        editBoundEffect,
+        removeEffectFromUnit,
+        confirmBindEffectToSkill,
+        editSkillEffect,
+        removeEffectFromSkill,
+        showAddEffectToUnitForm,
+        showAddEffectToSkillForm,
+        showAddSkillForm,
+        showGlobalEffectEditor,
+        showCreateEffectForm,
+        deleteGlobalEffect,
+        pushEditorState,
+        popEditorState,
+        syncTempSkill,
+        toggleMenu: (id) => {
+            const menu = document.getElementById(id);
+            if (menu.classList.contains('-translate-x-full')) {
+                menu.classList.remove('-translate-x-full');
+            } else {
+                menu.classList.add('-translate-x-full');
+            }
+        }
+    });
+
+    window.onload = initGame;
+}
