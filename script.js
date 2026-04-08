@@ -9,8 +9,8 @@ const GAME_CONFIG = {
         heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, mana: 8, normalSkills: ["shieldBash", "doubleStrike"], ultSkill: "ultimateStrike", isTerrain: false },
         mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike", isTerrain: false },
         mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true, temporary: false },
-        river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false },
-        forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false },
+        river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false, effectId: "riverSlow" },
+        forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false, effectId: "forestBuff" },
         manaPoint:{ emoji: "🔵", name: "回蓝点", desc: "踩踏后恢复5点蓝量", isTerrain: true, temporary: true, effect: "mana", value: 5 },
         healPoint:{ emoji: "❤️", name: "回血点", desc: "踩踏后恢复5点生命", isTerrain: true, temporary: true, effect: "heal", value: 5 },
         swamp: {
@@ -64,7 +64,8 @@ const GAME_CONFIG = {
             { id: "t4", type: "river", row: 6, col: 2 },
             { id: "t5", type: "forest", row: 2, col: 7 },
             { id: "t6", type: "forest", row: 7, col: 4 },
-            { id: "t7", type: "forest", row: 8, col: 5 }
+            { id: "t7", type: "forest", row: 8, col: 5 },
+            { id: "t8", type: "swamp", row: 5, col: 5 }
         ]
     },
 
@@ -144,6 +145,19 @@ const EFFECT_LIBRARY = {
         id: "berserk", name: "狂暴", emoji: "💢", color: "rose", duration: 2, stackable: true,
         desc: "大幅提升攻击力(+8)，但防御力大幅下降(-5)",
         components: { stats: { atk: 8, def: -5 } }
+    },
+    forestBuff: {
+        id: "forestBuff", name: "森林隐蔽", emoji: "🌲", color: "emerald", duration: 99, stackable: false,
+        desc: "处于森林中，移动和攻击范围减1，且外部单位只能相邻攻击（限位组件）",
+        components: {
+            stats: { move: -1, range: -1 },
+            protect: { limitRange: 1 } // 新组件：限制攻击者距离
+        }
+    },
+    riverSlow: {
+        id: "riverSlow", name: "河流阻力", emoji: "🌊", color: "sky", duration: 99, stackable: false,
+        desc: "处于河流中，移动力大幅受限",
+        components: { stats: { move: -3 } } // 模拟限移 1 格的效果
     }
 };
 
@@ -234,14 +248,6 @@ const EFFECT_HANDLERS = {
             }
         });
 
-        // 3. 地形特殊修正 (森林)
-        if (unit.forestModifier) {
-            if (stat === "move" || stat === "range") {
-                total -= 1;
-                sources.push({ name: "森林限制", icon: "🌲", value: -1, type: "terrain" });
-            }
-        }
-
         return { total, sources };
     },
 
@@ -258,6 +264,20 @@ const EFFECT_HANDLERS = {
         return auras.some(aura => aura.inhibit && aura.inhibit[action]);
     },
 
+    /**
+     * 获取保护组件 (例如森林的射程限制)
+     */
+    getProtection(target) {
+        const auras = this.calculateAurasForUnit(target);
+        let minLimit = Infinity;
+        auras.forEach(aura => {
+            if (aura.protect && aura.protect.limitRange !== undefined) {
+                minLimit = Math.min(minLimit, aura.protect.limitRange);
+            }
+        });
+        return minLimit === Infinity ? null : minLimit;
+    },
+
     trigger(unit, event, data) {
         if (!unit.activeEffects) return;
         unit.activeEffects.forEach(eff => {
@@ -270,39 +290,63 @@ const EFFECT_HANDLERS = {
 
     calculateAurasForUnit(target) {
         const activeAuras = [];
-        const allUnits = [...STATE.friendlyUnits, ...STATE.enemyUnits];
+        const allEntities = [...STATE.friendlyUnits, ...STATE.enemyUnits, ...STATE.terrainUnits];
         const targetTeam = STATE.friendlyUnits.includes(target) ? "friendly" : "enemy";
 
-        allUnits.forEach(source => {
-            if (source.hp <= 0 || source === target) return;
-            const sourceTeam = STATE.friendlyUnits.includes(source) ? "friendly" : "enemy";
+        allEntities.forEach(source => {
+            // 如果是战斗单位，死亡则无光环；如果是自己，通常不吃自己的光环（除非特殊定义）
+            if (source.hp !== undefined && source.hp <= 0) return;
+            if (source === target && !source.isTerrain) return;
 
+            const sourceTeam = STATE.friendlyUnits.includes(source) ? "friendly" : (STATE.enemyUnits.includes(source) ? "enemy" : "terrain");
+
+            // 处理普通单位的效果光环
             source.activeEffects?.forEach(eff => {
                 const t = EFFECT_LIBRARY[eff.id];
                 const aura = t?.components.aura;
                 if (aura) {
                     const dist = Math.abs(source.row - target.row) + Math.abs(source.col - target.col);
                     if (dist <= aura.range) {
-                        let match = false;
-                        if (aura.target === "ally" && sourceTeam === targetTeam) match = true;
-                        if (aura.target === "enemy" && sourceTeam !== targetTeam) match = true;
-                        if (aura.target === "all") match = true;
-
+                        let match = this.checkAuraMatch(aura.target, sourceTeam, targetTeam);
                         if (match) {
                             activeAuras.push({
                                 id: eff.id,
                                 sourceName: source.name,
                                 icon: t.emoji,
                                 stats: aura.stats,
-                                inhibit: aura.inhibit
+                                inhibit: aura.inhibit,
+                                protect: aura.protect
                             });
                         }
                     }
                 }
             });
+
+            // 处理地形自带的光环 (非触发型)
+            if (source.isTerrain && source.effectId && !source.effectIsTrigger) {
+                const t = EFFECT_LIBRARY[source.effectId];
+                if (t && source.row === target.row && source.col === target.col) {
+                    activeAuras.push({
+                        id: source.effectId,
+                        sourceName: source.name,
+                        icon: t.emoji,
+                        stats: t.components.stats,
+                        inhibit: t.components.inhibit,
+                        protect: t.components.protect
+                    });
+                }
+            }
         });
         return activeAuras;
-    }
+    },
+
+    checkAuraMatch(auraTarget, sourceTeam, targetTeam) {
+        if (auraTarget === "all") return true;
+        if (sourceTeam === "terrain") return true; // 地形对所有人有效（或由地形定义决定，暂定全员）
+        if (auraTarget === "ally" && sourceTeam === targetTeam) return true;
+        if (auraTarget === "enemy" && sourceTeam !== targetTeam) return true;
+        return false;
+    },
 };
 
 /**
@@ -368,6 +412,7 @@ class GameState {
         this.selectedSkill = null;
         this.editMode = false;
         this.editingUnit = null;     // {team, id, isTerrain, pendingAdd, row, col, pendingCopy, sourceId}
+        this.editingSkillId = null;
         this.previewTimeout = null;
     }
 
@@ -381,6 +426,7 @@ class GameState {
         this.selectedSkill = null;
         this.editMode = false;
         this.editingUnit = null;
+        this.editingSkillId = null;
         this.previewTimeout = null;
     }
 }
@@ -625,8 +671,14 @@ function createCombatUnit(base) {
 
 function isInRange(unit, targetRow, targetCol, range) {
     const manhattan = Math.abs(unit.row - targetRow) + Math.abs(unit.col - targetCol);
-    const targetTerrain = STATE.terrainUnits.find(t => t.row === targetRow && t.col === targetCol);
-    if (targetTerrain && targetTerrain.type === "forest") return manhattan <= 1;
+
+    // 检查目标是否有保护状态 (如森林)
+    const { combatUnit } = getCellContent(targetRow, targetCol);
+    if (combatUnit) {
+        const limit = EFFECT_HANDLERS.getProtection(combatUnit);
+        if (limit !== null && manhattan > limit) return false;
+    }
+
     return manhattan <= range;
 }
 
@@ -865,11 +917,11 @@ function highlightRanges() {
         return;
     }
 
-    let maxMove = (sel.team === "friendly") ? entity.remainingMove : entity.moveRange;
+    let maxMove = (sel.team === "friendly") ? entity.remainingMove : getEffectiveMoveRange(entity);
     if (maxMove <= 0) maxMove = 0;
     const reachable = calculateReachable(entity.row, entity.col, maxMove, entity);
 
-    let effectiveAtk = entity.forestModifier ? Math.max(1, entity.atkRange - 1) : entity.atkRange;
+    let effectiveAtk = getEffectiveAtkRange(entity);
     if (effectiveAtk <= 0) effectiveAtk = 0;
 
     const hasActionLeft = sel.team === "friendly" ? !entity.hasAttacked : true;
@@ -881,11 +933,8 @@ function highlightRanges() {
         const key = `${r},${c}`;
         const dist = reachable[key];
         const isMove = (maxMove > 0 && dist !== undefined && dist > 0);
-        const manhattan = Math.abs(r - entity.row) + Math.abs(c - entity.col);
 
-        let canAttack = (effectiveAtk > 0 && manhattan <= effectiveAtk && hasActionLeft);
-        const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
-        if (targetTerrain && targetTerrain.type === "forest") canAttack = (manhattan <= 1 && hasActionLeft);
+        let canAttack = hasActionLeft && isInRange(entity, r, c, effectiveAtk);
 
         if (isMove && canAttack) cell.classList.add("highlight-overlap");
         else if (isMove) cell.classList.add("highlight-move");
@@ -900,11 +949,9 @@ function highlightSkillRange(unit, skillId) {
     cells.forEach(cell => {
         const r = parseInt(cell.dataset.row), c = parseInt(cell.dataset.col);
         cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap", "highlight-skill");
-        const manhattan = Math.abs(r - unit.row) + Math.abs(c - unit.col);
-        let canCast = manhattan <= skill.range;
-        const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
-        if (targetTerrain && targetTerrain.type === "forest") canCast = manhattan <= 1;
-        if (canCast) cell.classList.add("highlight-skill");
+        if (isInRange(unit, r, c, skill.range)) {
+            cell.classList.add("highlight-skill");
+        }
     });
 }
 
@@ -953,16 +1000,8 @@ function applyTerrainEffect(unit) {
     const terrain = STATE.terrainUnits[terrainIndex];
     const tConfig = terrain;
 
-    unit.forestModifier = false;
-
-    if (terrain.type === "river") {
-        unit.remainingMove = Math.min(unit.remainingMove, 1);
-        addLog(`进入🌊河流，剩余移动限制为 <span class="font-mono">1</span> 格`, "amber");
-    } else if (terrain.type === "forest") {
-        unit.forestModifier = true;
-        if (unit.remainingMove > 0) unit.remainingMove = Math.max(0, unit.remainingMove - 1);
-        addLog(`进入🌲森林，移动与攻击范围 -1`, "amber");
-    } else if (tConfig.effect) {
+    // 特殊处理一次性地形逻辑 (回复点)
+    if (tConfig.effect) {
         if (tConfig.effect === "mana") {
             unit.currentMana = Math.min(unit.maxMana, unit.currentMana + tConfig.value);
             addLog(`踩到 ${tConfig.emoji} 回蓝点，恢复 <span class="font-mono">${tConfig.value}</span> 蓝量`, "cyan");
@@ -973,8 +1012,8 @@ function applyTerrainEffect(unit) {
         if (tConfig.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
     }
 
-    // 新增：支持地形自带效果
-    if (terrain.effectId) {
+    // 新增：支持地形自带效果 (仅限触发型)
+    if (terrain.effectId && terrain.effectIsTrigger) {
         applyEffect(unit, terrain.effectId, terrain.effectDuration || 3);
     }
     if (terrain.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
@@ -1011,6 +1050,11 @@ function performAttack(attacker, defender) {
         return;
     }
 
+    if (!isInRange(attacker, defender.row, defender.col, getEffectiveAtkRange(attacker))) {
+        addLog(`目标不在攻击范围内或受到地形保护`, "slate");
+        return;
+    }
+
     const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
     let damage = Math.max(1, getEffectiveAtk(attacker) - getEffectiveDef(defender));
     defender.hp = Math.max(0, defender.hp - damage);
@@ -1032,6 +1076,10 @@ function performAttack(attacker, defender) {
 
 function performSkill(attacker, skillId, defender) {
     const skill = GAME_CONFIG.SKILLS[skillId];
+    if (!isInRange(attacker, defender.row, defender.col, skill.range)) {
+        addLog(`技能目标不在射程内或受到地形保护`, "slate");
+        return;
+    }
     const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
     let damage = Math.max(0, skill.damage - getEffectiveDef(defender));
 
@@ -1435,7 +1483,7 @@ function deleteGlobalEffect(id) {
     }
 }
 
-function showCreateEffectForm() {
+function showCreateEffectForm(fromBinding = false) {
     const container = document.getElementById("edit-unit-form");
     container.innerHTML = `
         <div class="bg-slate-900 border border-emerald-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
@@ -1501,6 +1549,14 @@ function showCreateEffectForm() {
                     </div>
                 </div>
 
+                <!-- 保护组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">特殊保护 (地形组件)</div>
+                    <div class="grid grid-cols-1 gap-2">
+                        <input id="comp-protect-range" type="number" placeholder="限制攻击者距离 (例如森林为1)" class="editor-input px-3 py-2 rounded-lg text-xs">
+                    </div>
+                </div>
+
                 <!-- 光环组件 -->
                 <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
                     <div class="text-[10px] font-bold text-slate-400">光环配置 (影响周围单位)</div>
@@ -1529,14 +1585,14 @@ function showCreateEffectForm() {
             </div>
 
             <div class="flex gap-2">
-                <button onclick="confirmCreateEffect()" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">保存到库</button>
-                <button onclick="showGlobalEffectEditor()" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
+                <button onclick="confirmCreateEffect(${fromBinding})" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">保存到库</button>
+                <button onclick="${fromBinding ? 'renderEditForm()' : 'showGlobalEffectEditor()'}" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
             </div>
         </div>
     `;
 }
 
-function confirmCreateEffect() {
+function confirmCreateEffect(returnToBinding = false) {
     const id = document.getElementById("new-eff-id").value || ("eff_" + Date.now());
     const name = document.getElementById("new-eff-name").value || "新状态";
     const emoji = document.getElementById("new-eff-emoji").value || "✨";
@@ -1573,6 +1629,10 @@ function confirmCreateEffect() {
     if (document.getElementById("comp-inhibit-skill").checked) inhibit.skill = true;
     if (Object.keys(inhibit).length > 0) components.inhibit = inhibit;
 
+    // 收集 Protect
+    const pRange = parseInt(document.getElementById("comp-protect-range").value);
+    if (pRange) components.protect = { limitRange: pRange };
+
     // 收集 Aura
     const auraRange = parseInt(document.getElementById("comp-aura-range").value);
     if (auraRange) {
@@ -1587,7 +1647,15 @@ function confirmCreateEffect() {
     EFFECT_LIBRARY[id] = { id, name, emoji, color: "emerald", desc, duration, stackable, components };
 
     addLog(`✅ 已创建全局状态并存入库：${emoji} ${name}`, "emerald");
-    showGlobalEffectEditor();
+    if (returnToBinding) {
+        if (STATE.editingSkillId) {
+            editExistingSkill(STATE.editingSkillId);
+        } else {
+            renderEditForm();
+        }
+    } else {
+        showGlobalEffectEditor();
+    }
 }
 
 /**
@@ -1628,10 +1696,14 @@ function renderEffectBindingList(unit) {
 }
 
 function showAddEffectToUnitForm() {
+    STATE.editingSkillId = null;
     const container = document.getElementById("edit-unit-form");
     const html = `
         <div class="bg-indigo-900/10 border border-indigo-400/20 rounded-2xl p-5 mb-6">
-            <div class="text-indigo-400 text-xs font-bold mb-4 uppercase tracking-widest">选择要绑定的状态</div>
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-indigo-400 text-xs font-bold uppercase tracking-widest">选择要绑定的状态</div>
+                <button onclick="showCreateEffectForm(true)" class="text-[9px] px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">新建状态库条目</button>
+            </div>
             <div class="grid grid-cols-2 gap-2 mb-4 max-h-48 overflow-y-auto custom-scroll">
                 ${Object.keys(EFFECT_LIBRARY).map(id => `
                     <button onclick="confirmBindEffect('${id}')" class="flex items-center gap-2 p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-left transition-all">
@@ -1649,7 +1721,9 @@ function showAddEffectToUnitForm() {
 function confirmBindEffect(effectId) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (STATE.editingUnit.isTerrain) {
+        const isTrigger = confirm("是否将其设为「触发型」效果？\n确定：单位踩上去后获得该状态（离开后仍持续数回合）\n取消：单位站在此处时生效（离开后立刻消失）");
         unit.effectId = effectId;
+        unit.effectIsTrigger = isTrigger;
         unit.effectDuration = EFFECT_LIBRARY[effectId].duration || 3;
     } else {
         if (!unit.activeEffects) unit.activeEffects = [];
@@ -1823,10 +1897,15 @@ function renderSkillEffectBinding(skillId) {
 }
 
 function showAddEffectToSkillForm(skillId, type) {
+    STATE.editingSkillId = skillId;
     const listId = type === 'target' ? 'skill-target-effects' : 'skill-self-effects';
     const list = document.getElementById(listId);
     const html = `
         <div class="p-3 bg-slate-800 rounded-xl space-y-3 mb-3 border border-amber-500/30">
+            <div class="flex justify-between items-center">
+                <span class="text-[9px] text-amber-300 font-bold">选择状态</span>
+                <button onclick="showCreateEffectForm(true)" class="text-[8px] px-1.5 py-0.5 bg-amber-600 text-white rounded">库里没有？去新建</button>
+            </div>
             <select id="new-skill-eff-id-${type}" class="editor-input w-full px-2 py-1 rounded text-[10px]">
                 ${Object.keys(EFFECT_LIBRARY).map(id => `<option value="${id}">${EFFECT_LIBRARY[id].emoji} ${EFFECT_LIBRARY[id].name}</option>`).join("")}
             </select>
@@ -2273,9 +2352,9 @@ const TooltipManager = {
         // 边界检查
         if (top < 10) { // 如果上方空间不足，显示在下方
             top = rect.bottom + 10;
-            tooltip.style.originTransform = "top";
+            tooltip.style.transformOrigin = "top";
         } else {
-            tooltip.style.originTransform = "bottom";
+            tooltip.style.transformOrigin = "bottom";
         }
 
         left = Math.max(10, Math.min(window.innerWidth - tooltipRect.width - 10, left));
