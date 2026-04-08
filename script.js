@@ -4,8 +4,8 @@
  */
 const GAME_CONFIG = {
     UNIT_TYPES: {
-        knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["doubleStrike", "shieldBash"], ultSkill: "ultimateStrike", isTerrain: false },
-        archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "poisonArrow"], ultSkill: "ultimateStrike", isTerrain: false },
+        knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["vampiricStrike", "shieldBash"], ultSkill: "commanderAura", isTerrain: false },
+        archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "plagueBolt"], ultSkill: "ultimateStrike", isTerrain: false },
         heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, mana: 8, normalSkills: ["shieldBash", "doubleStrike"], ultSkill: "ultimateStrike", isTerrain: false },
         mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike", isTerrain: false },
         mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true, temporary: false },
@@ -30,7 +30,28 @@ const GAME_CONFIG = {
         arcaneBlast: { emoji: "🔥", name: "奥术冲击", manaCost: 5, range: 2, damage: 14, desc: "魔法爆炸伤害" },
         shieldBash: { emoji: "🛡️", name: "盾牌猛击", manaCost: 3, range: 1, damage: 9, desc: "坦克近战反击" },
         ultimateStrike: { emoji: "🌟", name: "终极审判", manaCost: 9, range: 3, damage: 25, desc: "消耗大量蓝量的终极一击" },
-        poisonArrow: { emoji: "🏹", name: "毒箭", manaCost: 4, range: 3, damage: 8, effectId: "stun", effectDuration: 3, desc: "造成伤害并施加中毒" }
+
+        // 复杂预设技能
+        vampiricStrike: {
+            emoji: "🦇", name: "吸血打击", manaCost: 5, range: 1, damage: 12,
+            desc: "造成伤害并获得吸血状态",
+            selfEffects: [{id: "lifesteal", duration: 3}]
+        },
+        holyShield: {
+            emoji: "✨", name: "神圣护盾", manaCost: 4, range: 0, damage: 0,
+            desc: "给自己施加防御强化",
+            selfEffects: [{id: "defBuff", duration: 4}]
+        },
+        plagueBolt: {
+            emoji: "🤢", name: "瘟疫箭", manaCost: 5, range: 3, damage: 7,
+            desc: "使目标中毒并减速",
+            targetEffects: [{id: "poison", duration: 3}, {id: "slow", duration: 2}]
+        },
+        commanderAura: {
+            emoji: "🚩", name: "统帅集结", manaCost: 6, range: 0, damage: 0,
+            desc: "获得 2 格范围的攻击强化光环",
+            selfEffects: [{id: "commander", duration: 5}]
+        }
     },
 
     INITIAL: {
@@ -269,6 +290,7 @@ const EFFECT_HANDLERS = {
 
                         if (match) {
                             activeAuras.push({
+                                id: eff.id,
                                 sourceName: source.name,
                                 icon: t.emoji,
                                 stats: aura.stats,
@@ -769,7 +791,7 @@ function updateCellContent(cell, row, col) {
                     wrapper.innerHTML = `<span>${template.emoji}</span>${eff.stacks > 1 ? `<span class="status-stacks">${eff.stacks}</span>` : ""}`;
                     wrapper.onclick = (e) => {
                         e.stopPropagation();
-                        showStatusDetail(eff);
+                        showStatusDetail(e, eff);
                     };
                     container.appendChild(wrapper);
                 }
@@ -1011,26 +1033,28 @@ function performAttack(attacker, defender) {
 function performSkill(attacker, skillId, defender) {
     const skill = GAME_CONFIG.SKILLS[skillId];
     const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
-    let damage = Math.max(1, skill.damage - getEffectiveDef(defender));
-    defender.hp = Math.max(0, defender.hp - damage);
+    let damage = Math.max(0, skill.damage - getEffectiveDef(defender));
 
-    addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+    // 如果技能本身有伤害
+    if (skill.damage > 0) {
+        defender.hp = Math.max(0, defender.hp - damage);
+        addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+        AnimationManager.showDamagePopup(damage, defender.row, defender.col);
 
-    // 触发事件 (技能也算攻击触发)
-    EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range, isSkill: true });
-    EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range, isSkill: true });
-
-    // 新增：技能可以附加效果
-    if (skill.effectId) {
-        applyEffect(defender, skill.effectId, skill.effectDuration);
-    }
-    // 处理多个效果 (如果后续扩展为数组)
-    if (skill.effects) {
-        skill.effects.forEach(eff => applyEffect(defender, eff.id, eff.duration));
+        // 触发攻击/防御事件
+        EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range, isSkill: true });
+        EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range, isSkill: true });
+    } else {
+        addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 已发动`, "cyan");
     }
 
-    // 新增：伤害跳字（技能伤害）
-    AnimationManager.showDamagePopup(damage, defender.row, defender.col);
+    // 施加状态 (对目标)
+    const targetEffects = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+    targetEffects.forEach(eff => applyEffect(defender, eff.id, eff.duration));
+
+    // 施加状态 (对自己)
+    const selfEffects = skill.selfEffects || [];
+    selfEffects.forEach(eff => applyEffect(attacker, eff.id, eff.duration));
 
     AnimationManager.animateProjectile(attacker.row, attacker.col, defender.row, defender.col, skill.emoji);
     AnimationManager.showSkillNamePopup(skill.name, defender.row, defender.col);
@@ -1081,7 +1105,7 @@ function handleCellClick(row, col) {
 
     if (STATE.selectedSkill) {
         const { combatUnit, combatTeam } = getCellContent(row, col);
-        if (combatTeam === "enemy") {
+        if (combatUnit) {
             const actor = getUnit("friendly", STATE.selected.id);
             const skillId = STATE.selectedSkill;
             const skill = GAME_CONFIG.SKILLS[skillId];
@@ -1760,68 +1784,88 @@ function editExistingSkill(skillId) {
 function renderSkillEffectBinding(skillId) {
     const skill = GAME_CONFIG.SKILLS[skillId];
     const container = document.createElement("div");
-    container.className = "mt-4 pt-4 border-t border-amber-500/20";
+    container.className = "mt-4 pt-4 border-t border-amber-500/20 space-y-4";
     container.innerHTML = `
-        <div class="text-[10px] font-bold text-amber-500/60 uppercase mb-2">技能附加效果</div>
-        <div id="skill-bound-effects" class="space-y-1 mb-2"></div>
-        <button onclick="showAddEffectToSkillForm('${skillId}')" class="w-full py-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/30 transition-all">+ 绑定新效果</button>
+        <div>
+            <div class="text-[10px] font-bold text-rose-500/60 uppercase mb-2">对目标附加</div>
+            <div id="skill-target-effects" class="space-y-1 mb-2"></div>
+            <button onclick="showAddEffectToSkillForm('${skillId}', 'target')" class="w-full py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 text-[10px] font-bold rounded-lg border border-rose-500/30 transition-all">+ 绑定给目标</button>
+        </div>
+        <div>
+            <div class="text-[10px] font-bold text-emerald-500/60 uppercase mb-2">对自己附加</div>
+            <div id="skill-self-effects" class="space-y-1 mb-2"></div>
+            <button onclick="showAddEffectToSkillForm('${skillId}', 'self')" class="w-full py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/30 transition-all">+ 绑定给自己</button>
+        </div>
     `;
     document.querySelector(".bg-amber-900/10 .space-y-4").appendChild(container);
 
-    const list = document.getElementById("skill-bound-effects");
-    const effects = skill.effects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
-
-    list.innerHTML = effects.map((eff, idx) => {
+    const targetList = document.getElementById("skill-target-effects");
+    const tEffs = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+    targetList.innerHTML = tEffs.map((eff, idx) => {
         const t = EFFECT_LIBRARY[eff.id];
-        if (!t) return "";
-        return `
+        return t ? `
             <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
                 <span>${t.emoji} ${t.name} (${eff.duration}T)</span>
-                <button onclick="removeEffectFromSkill('${skillId}', ${idx})" class="text-rose-400">✕</button>
-            </div>
-        `;
+                <button onclick="removeEffectFromSkill('${skillId}', ${idx}, 'target')" class="text-rose-400">✕</button>
+            </div>` : "";
+    }).join("");
+
+    const selfList = document.getElementById("skill-self-effects");
+    const sEffs = skill.selfEffects || [];
+    selfList.innerHTML = sEffs.map((eff, idx) => {
+        const t = EFFECT_LIBRARY[eff.id];
+        return t ? `
+            <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
+                <span>${t.emoji} ${t.name} (${eff.duration}T)</span>
+                <button onclick="removeEffectFromSkill('${skillId}', ${idx}, 'self')" class="text-rose-400">✕</button>
+            </div>` : "";
     }).join("");
 }
 
-function showAddEffectToSkillForm(skillId) {
-    const list = document.getElementById("skill-bound-effects");
+function showAddEffectToSkillForm(skillId, type) {
+    const listId = type === 'target' ? 'skill-target-effects' : 'skill-self-effects';
+    const list = document.getElementById(listId);
     const html = `
         <div class="p-3 bg-slate-800 rounded-xl space-y-3 mb-3 border border-amber-500/30">
-            <select id="new-skill-eff-id" class="editor-input w-full px-2 py-1 rounded text-[10px]">
+            <select id="new-skill-eff-id-${type}" class="editor-input w-full px-2 py-1 rounded text-[10px]">
                 ${Object.keys(EFFECT_LIBRARY).map(id => `<option value="${id}">${EFFECT_LIBRARY[id].emoji} ${EFFECT_LIBRARY[id].name}</option>`).join("")}
             </select>
-            <input id="new-skill-eff-dur" type="number" value="3" class="editor-input w-full px-2 py-1 rounded text-[10px]" placeholder="持续回合">
+            <input id="new-skill-eff-dur-${type}" type="number" value="3" class="editor-input w-full px-2 py-1 rounded text-[10px]" placeholder="持续回合">
             <div class="flex gap-2">
-                <button onclick="confirmBindEffectToSkill('${skillId}')" class="flex-1 py-1 bg-amber-600 text-white text-[10px] font-bold rounded">确定</button>
-                <button onclick="renderEditForm()" class="flex-1 py-1 bg-slate-700 text-slate-300 text-[10px] font-bold rounded">取消</button>
+                <button onclick="confirmBindEffectToSkill('${skillId}', '${type}')" class="flex-1 py-1 bg-amber-600 text-white text-[10px] font-bold rounded">确定</button>
+                <button onclick="editExistingSkill('${skillId}')" class="flex-1 py-1 bg-slate-700 text-slate-300 text-[10px] font-bold rounded">取消</button>
             </div>
         </div>
     `;
     list.insertAdjacentHTML('beforebegin', html);
 }
 
-function confirmBindEffectToSkill(skillId) {
+function confirmBindEffectToSkill(skillId, type) {
     const skill = GAME_CONFIG.SKILLS[skillId];
-    const id = document.getElementById("new-skill-eff-id").value;
-    const duration = parseInt(document.getElementById("new-skill-eff-dur").value) || 3;
+    const id = document.getElementById(`new-skill-eff-id-${type}`).value;
+    const duration = parseInt(document.getElementById(`new-skill-eff-dur-${type}`).value) || 3;
 
-    if (!skill.effects) skill.effects = skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [];
-    skill.effects.push({id, duration});
-    skill.effectId = null; // 清除旧的单效果字段
+    if (type === 'target') {
+        if (!skill.targetEffects) skill.targetEffects = skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [];
+        skill.targetEffects.push({id, duration});
+        skill.effectId = null;
+    } else {
+        if (!skill.selfEffects) skill.selfEffects = [];
+        skill.selfEffects.push({id, duration});
+    }
 
-    addLog(`✅ 已为技能「${skill.name}」添加附加效果`, "amber");
-    renderEditForm();
-    editExistingSkill(skillId); // 重新进入编辑模式以刷新列表
+    addLog(`✅ 技能「${skill.name}」已添加状态`, "amber");
+    editExistingSkill(skillId);
 }
 
-function removeEffectFromSkill(skillId, index) {
+function removeEffectFromSkill(skillId, index, type) {
     const skill = GAME_CONFIG.SKILLS[skillId];
-    if (skill.effects) {
-        skill.effects.splice(index, 1);
-    } else if (skill.effectId) {
-        skill.effectId = null;
+    if (type === 'target') {
+        if (skill.targetEffects) skill.targetEffects.splice(index, 1);
+        else if (skill.effectId) skill.effectId = null;
+    } else {
+        if (skill.selfEffects) skill.selfEffects.splice(index, 1);
     }
-    renderEditForm();
     editExistingSkill(skillId);
 }
 
@@ -2028,14 +2072,14 @@ function updateSelectedPanel() {
         atkEl.innerHTML = `
             ${getEffectiveAtk(entity)}
             ${atkMod.total !== 0 ? `<span class="text-xs ${atkMod.total > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${atkMod.total > 0 ? '+' : ''}${atkMod.total})</span>` : ''}`;
-        atkEl.onclick = () => showStatDetail(entity, "atk", "攻击力");
+        atkEl.onclick = (e) => showStatDetail(e, entity, "atk", "攻击力");
 
         const defMod = EFFECT_HANDLERS.getStatModifier(entity,'def');
         const defEl = document.getElementById("selected-def");
         defEl.innerHTML = `
             ${getEffectiveDef(entity)}
             ${defMod.total !== 0 ? `<span class="text-xs ${defMod.total > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${defMod.total > 0 ? '+' : ''}${defMod.total})</span>` : ''}`;
-        defEl.onclick = () => showStatDetail(entity, "def", "防御力");
+        defEl.onclick = (e) => showStatDetail(e, entity, "def", "防御力");
 
         const effMove = getEffectiveMoveRange(entity);
         const moveMod = EFFECT_HANDLERS.getStatModifier(entity,'move').total;
@@ -2043,7 +2087,7 @@ function updateSelectedPanel() {
         moveEl.innerHTML = `
             <span class="text-emerald-400">${effMove}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.moveRange}</span>
             ${moveMod !== 0 ? `<span class="text-[10px] ${moveMod > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold ml-1 cursor-pointer underline decoration-dotted">${moveMod > 0 ? '+' : ''}${moveMod}</span>` : ''}`;
-        moveEl.onclick = () => showStatDetail(entity, "move", "移动范围");
+        moveEl.onclick = (e) => showStatDetail(e, entity, "move", "移动范围");
 
         const effRange = getEffectiveAtkRange(entity);
         const rangeMod = EFFECT_HANDLERS.getStatModifier(entity,'range').total;
@@ -2051,7 +2095,7 @@ function updateSelectedPanel() {
         rangeEl.innerHTML = `
             <span class="text-rose-400">${effRange}</span>
             ${rangeMod !== 0 ? `<span class="text-xs ${rangeMod > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${rangeMod > 0 ? '+' : ''}${rangeMod})</span>` : ''}`;
-        rangeEl.onclick = () => showStatDetail(entity, "range", "攻击范围");
+        rangeEl.onclick = (e) => showStatDetail(e, entity, "range", "攻击范围");
 
         document.getElementById("selected-mana").innerHTML = `
             <span class="text-cyan-400">${entity.currentMana}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.maxMana}</span>`;
@@ -2063,14 +2107,26 @@ function updateSelectedPanel() {
         const effectsContainer = document.getElementById("active-effects-list");
         effectsContainer.innerHTML = "";
 
-        if (entity.activeEffects && entity.activeEffects.length > 0) {
-            entity.activeEffects.forEach(eff => {
+        const auras = EFFECT_HANDLERS.calculateAurasForUnit(entity);
+        const hasEffects = (entity.activeEffects && entity.activeEffects.length > 0) || auras.length > 0;
+
+        if (hasEffects) {
+            // 普通状态
+            entity.activeEffects?.forEach(eff => {
                 const template = EFFECT_LIBRARY[eff.id];
                 if (!template) return;
                 const div = document.createElement("div");
                 div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${template.color}-500/20 text-${template.color}-300 border border-${template.color}-500/30 cursor-pointer hover:brightness-125 transition-all`;
                 div.innerHTML = `${template.emoji} ${template.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
-                div.onclick = () => showStatusDetail(eff);
+                div.onclick = (e) => showStatusDetail(e, eff);
+                effectsContainer.appendChild(div);
+            });
+            // 光环状态
+            auras.forEach(aura => {
+                const div = document.createElement("div");
+                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 cursor-pointer hover:brightness-125 transition-all`;
+                div.innerHTML = `${aura.icon} ${aura.sourceName} 的光环`;
+                div.onclick = (e) => showStatusDetail(e, aura, true);
                 effectsContainer.appendChild(div);
             });
         } else {
@@ -2092,6 +2148,25 @@ function updateSelectedPanel() {
             const canUse = entity.currentMana >= skill.manaCost;
             const btn = document.createElement("button");
             btn.className = `flex items-center gap-4 px-5 py-4 rounded-2xl text-left w-full transition-all active:scale-[0.98] ${isFriendly && canUse ? "bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-100" : "bg-slate-800/40 hover:bg-slate-800/60 border border-white/5 text-slate-300"}`;
+
+            // 自动生成带标签的描述
+            let extraDesc = "";
+            const tEffs = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+            const sEffs = skill.selfEffects || [];
+
+            if (tEffs.length > 0) {
+                extraDesc += `<div class="mt-2 flex flex-wrap gap-1">
+                    <span class="text-[8px] bg-rose-500/20 text-rose-300 px-1 rounded">对目标:</span>
+                    ${tEffs.map(e => `<span class="status-tag" data-eff-id="${e.id}">${EFFECT_LIBRARY[e.id]?.emoji || ""} ${EFFECT_LIBRARY[e.id]?.name || ""}</span>`).join("")}
+                </div>`;
+            }
+            if (sEffs.length > 0) {
+                extraDesc += `<div class="mt-1 flex flex-wrap gap-1">
+                    <span class="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 rounded">对自己:</span>
+                    ${sEffs.map(e => `<span class="status-tag" data-eff-id="${e.id}">${EFFECT_LIBRARY[e.id]?.emoji || ""} ${EFFECT_LIBRARY[e.id]?.name || ""}</span>`).join("")}
+                </div>`;
+            }
+
             btn.innerHTML = `
                 <span class="text-4xl filter drop-shadow-lg">${skill.emoji}</span>
                 <div class="flex-1">
@@ -2100,9 +2175,20 @@ function updateSelectedPanel() {
                         <span class="font-mono text-xs text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded">${skill.manaCost} MP</span>
                     </div>
                     <div class="text-[10px] text-slate-400 mt-1 leading-tight">${skill.desc}</div>
+                    ${extraDesc}
                     <div class="text-[10px] font-bold text-rose-400/70 mt-1 uppercase tracking-tighter">威力 ${skill.damage} • 射程 ${skill.range}</div>
                 </div>
             `;
+
+            // 为标签绑定点击事件
+            btn.querySelectorAll(".status-tag").forEach(tag => {
+                tag.onclick = (e) => {
+                    e.stopPropagation();
+                    const effId = tag.dataset.effId;
+                    showStatusDetail(e, { id: effId, remainingTurns: EFFECT_LIBRARY[effId]?.duration || 0 });
+                };
+            });
+
             btn.onclick = () => {
                 if (isFriendly && canUse && STATE.currentTurn === "player") {
                     activateSkill(skillId);
@@ -2160,74 +2246,118 @@ function updateUI() {
     endBtn.style.filter = STATE.currentTurn === "player" ? "" : "grayscale(1)";
 }
 
-function showStatDetail(unit, statName, statLabel) {
+/**
+ * ====================== Tooltip 气泡系统 ======================
+ */
+const TooltipManager = {
+    timer: null,
+    activeAnchor: null,
+
+    show(anchor, contentHtml) {
+        this.activeAnchor = anchor;
+        const tooltip = document.getElementById("tooltip");
+        tooltip.innerHTML = contentHtml;
+        tooltip.classList.remove("hidden");
+        tooltip.style.pointerEvents = "auto";
+
+        // 强制重绘
+        tooltip.offsetHeight;
+
+        const rect = anchor.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+
+        // 计算位置：默认在上方居中
+        let top = rect.top - tooltipRect.height - 10;
+        let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+
+        // 边界检查
+        if (top < 10) { // 如果上方空间不足，显示在下方
+            top = rect.bottom + 10;
+            tooltip.style.originTransform = "top";
+        } else {
+            tooltip.style.originTransform = "bottom";
+        }
+
+        left = Math.max(10, Math.min(window.innerWidth - tooltipRect.width - 10, left));
+
+        tooltip.style.top = `${top}px`;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.opacity = "1";
+        tooltip.style.transform = "scale(1)";
+
+        // 点击外部关闭
+        const closeHandler = (e) => {
+            if (!tooltip.contains(e.target) && !anchor.contains(e.target)) {
+                this.hide();
+                document.removeEventListener("click", closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener("click", closeHandler), 10);
+    },
+
+    hide() {
+        const tooltip = document.getElementById("tooltip");
+        tooltip.style.opacity = "0";
+        tooltip.style.transform = "scale(0.95)";
+        tooltip.style.pointerEvents = "none";
+        setTimeout(() => {
+            if (tooltip.style.opacity === "0") tooltip.classList.add("hidden");
+        }, 200);
+        this.activeAnchor = null;
+    }
+};
+
+function showStatDetail(event, unit, statName, statLabel) {
     const modData = EFFECT_HANDLERS.getStatModifier(unit, statName);
     const baseValue = (statName === "atk") ? unit.atk :
                      (statName === "def") ? unit.def :
                      (statName === "move") ? unit.moveRange : unit.atkRange;
 
-    let content = `<div class="text-left space-y-4">
-        <div class="flex justify-between items-center border-b border-white/10 pb-3">
-            <span class="text-slate-400 font-bold uppercase tracking-widest text-xs">${statLabel} 计算详情</span>
-            <span class="text-2xl font-black text-white">${baseValue + modData.total}</span>
-        </div>
+    let content = `
+        <div class="space-y-3 min-w-[200px]">
+            <div class="flex justify-between items-center border-b border-white/10 pb-2">
+                <span class="text-slate-400 font-bold text-[10px] uppercase tracking-widest">${statLabel}</span>
+                <span class="text-lg font-black text-white">${baseValue + modData.total}</span>
+            </div>
+            <div class="space-y-1.5">
+                <div class="flex justify-between text-[11px]">
+                    <span class="text-slate-500">基础数值</span>
+                    <span class="font-mono text-slate-300">${baseValue}</span>
+                </div>`;
 
-        <div class="space-y-2">
-            <div class="flex justify-between items-center px-3 py-2 bg-slate-800/40 rounded-xl border border-white/5">
-                <span class="text-slate-300">基础数值</span>
-                <span class="font-mono font-bold">${baseValue}</span>
+    modData.sources.forEach(src => {
+        const isPos = src.value > 0;
+        content += `
+            <div class="flex justify-between text-[11px]">
+                <span class="text-slate-300 flex items-center gap-1"><span>${src.icon}</span> ${src.name}</span>
+                <span class="font-mono font-bold ${isPos ? 'text-emerald-400' : 'text-rose-400'}">${isPos ? '+' : ''}${src.value}</span>
             </div>`;
+    });
 
-    if (modData.sources.length > 0) {
-        modData.sources.forEach(src => {
-            const isPos = src.value > 0;
-            content += `
-            <div class="flex justify-between items-center px-3 py-2 bg-slate-800/40 rounded-xl border border-white/5">
-                <div class="flex items-center gap-2">
-                    <span class="text-lg">${src.icon}</span>
-                    <span class="text-slate-300 text-xs">${src.name}</span>
-                </div>
-                <span class="font-mono font-bold ${isPos ? 'text-emerald-400' : 'text-rose-400'}">
-                    ${isPos ? '+' : ''}${src.value}
-                </span>
-            </div>`;
-        });
-    } else {
-        content += `<div class="text-center py-4 text-[10px] text-slate-500 uppercase tracking-tighter">无任何修正项</div>`;
-    }
-
-    content += `</div>
-        <div class="pt-2 border-t border-white/10 flex justify-between text-[10px] font-bold text-slate-500 uppercase">
-            <span>最终结果</span>
-            <span class="text-white">${baseValue + modData.total}</span>
-        </div>
-    </div>`;
-
-    showGenericModal(`${statLabel} 属性详情`, content);
+    content += `</div></div>`;
+    TooltipManager.show(event.currentTarget, content);
 }
 
-function showStatusDetail(eff) {
+function showStatusDetail(event, eff, isAura = false) {
     const template = EFFECT_LIBRARY[eff.id];
     if (!template) return;
 
-    let content = `<div class="text-left space-y-3">
-        <div class="flex items-center gap-3 border-b border-white/10 pb-2">
-            <span class="text-4xl">${template.emoji}</span>
-            <div>
-                <div class="font-bold text-xl text-${template.color}-400">${template.name}</div>
-                <div class="text-[10px] text-slate-500 uppercase tracking-widest">剩余持续: ${eff.remainingTurns} 回合</div>
+    let content = `
+        <div class="space-y-2">
+            <div class="flex items-center gap-2 border-b border-white/10 pb-2">
+                <span class="text-2xl">${template.emoji}</span>
+                <div>
+                    <div class="font-bold text-sm text-${template.color}-400">${template.name}</div>
+                    <div class="text-[9px] text-slate-500 uppercase tracking-widest">
+                        ${isAura ? `光环来自: ${eff.sourceName}` : `持续: ${eff.remainingTurns} 回合`}
+                    </div>
+                </div>
             </div>
-        </div>
-        <p class="text-sm text-slate-300 leading-relaxed">${template.desc}</p>`;
-
-    if (eff.stacks > 1) {
-        content += `<div class="bg-slate-800/50 p-2 rounded-lg text-xs border border-white/5">
-            <span class="text-amber-400 font-bold">当前叠加:</span> ${eff.stacks} 层 (数值倍增)
+            <p class="text-[11px] text-slate-300 leading-relaxed">${template.desc}</p>
+            ${eff.stacks > 1 ? `<div class="text-[10px] text-amber-400 font-bold">当前叠加: ${eff.stacks} 层</div>` : ''}
         </div>`;
-    }
 
-    content += `</div>`;
-    showGenericModal(template.emoji + " 效果详情", content);
+    TooltipManager.show(event.currentTarget, content);
 }
 
 function showGenericModal(title, htmlContent) {

@@ -189,6 +189,9 @@
     </div>
 
     <!-- 结果弹窗 -->
+    <!-- 通用气泡浮窗 (Tooltip) -->
+    <div id="tooltip" class="fixed hidden z-[110] glass-panel p-4 rounded-[24px] shadow-2xl border border-white/20 max-w-[280px] pointer-events-auto transition-all duration-200 opacity-0 scale-95 origin-top"></div>
+
     <div id="result-modal" onclick="if(event.target.id==='result-modal')hideModal()" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6">
         <div class="glass-panel max-w-sm w-full rounded-[48px] p-10 text-center border-white/10">
             <div id="result-icon" class="text-8xl mb-8 animate-bounce"></div>

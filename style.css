@@ -171,6 +171,23 @@ body {
     line-height: 1;
 }
 
+.status-tag {
+    font-size: 9px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 1px 4px;
+    color: #94a3b8;
+    cursor: help;
+    transition: all 0.2s;
+}
+
+.status-tag:hover {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border-color: rgba(255,255,255,0.3);
+}
+
 /* 进度条 */
 .hp-bar {
     background: rgba(0,0,0,0.4);
