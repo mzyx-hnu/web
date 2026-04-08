@@ -4,13 +4,13 @@
  */
 const GAME_CONFIG = {
     UNIT_TYPES: {
-        knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["doubleStrike", "shieldBash"], ultSkill: "ultimateStrike", isTerrain: false },
-        archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "poisonArrow"], ultSkill: "ultimateStrike", isTerrain: false },
+        knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["vampiricStrike", "shieldBash"], ultSkill: "commanderAura", isTerrain: false },
+        archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "plagueBolt"], ultSkill: "ultimateStrike", isTerrain: false },
         heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, mana: 8, normalSkills: ["shieldBash", "doubleStrike"], ultSkill: "ultimateStrike", isTerrain: false },
         mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike", isTerrain: false },
         mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true, temporary: false },
-        river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false },
-        forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false },
+        river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false, effectId: "riverSlow" },
+        forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false, effectId: "forestBuff" },
         manaPoint:{ emoji: "🔵", name: "回蓝点", desc: "踩踏后恢复5点蓝量", isTerrain: true, temporary: true, effect: "mana", value: 5 },
         healPoint:{ emoji: "❤️", name: "回血点", desc: "踩踏后恢复5点生命", isTerrain: true, temporary: true, effect: "heal", value: 5 },
         swamp: {
@@ -30,7 +30,28 @@ const GAME_CONFIG = {
         arcaneBlast: { emoji: "🔥", name: "奥术冲击", manaCost: 5, range: 2, damage: 14, desc: "魔法爆炸伤害" },
         shieldBash: { emoji: "🛡️", name: "盾牌猛击", manaCost: 3, range: 1, damage: 9, desc: "坦克近战反击" },
         ultimateStrike: { emoji: "🌟", name: "终极审判", manaCost: 9, range: 3, damage: 25, desc: "消耗大量蓝量的终极一击" },
-        poisonArrow: { emoji: "🏹", name: "毒箭", manaCost: 4, range: 3, damage: 8, effectId: "stun", effectDuration: 3, desc: "造成伤害并施加中毒" }
+
+        // 复杂预设技能
+        vampiricStrike: {
+            emoji: "🦇", name: "吸血打击", manaCost: 5, range: 1, damage: 12,
+            desc: "造成伤害并获得吸血状态",
+            selfEffects: [{id: "lifesteal", duration: 3}]
+        },
+        holyShield: {
+            emoji: "✨", name: "神圣护盾", manaCost: 4, range: 0, damage: 0,
+            desc: "给自己施加防御强化",
+            selfEffects: [{id: "defBuff", duration: 4}]
+        },
+        plagueBolt: {
+            emoji: "🤢", name: "瘟疫箭", manaCost: 5, range: 3, damage: 7,
+            desc: "使目标中毒并减速",
+            targetEffects: [{id: "poison", duration: 3}, {id: "slow", duration: 2}]
+        },
+        commanderAura: {
+            emoji: "🚩", name: "统帅集结", manaCost: 6, range: 0, damage: 0,
+            desc: "获得 2 格范围的攻击强化光环",
+            selfEffects: [{id: "commander", duration: 5}]
+        }
     },
 
     INITIAL: {
@@ -43,7 +64,8 @@ const GAME_CONFIG = {
             { id: "t4", type: "river", row: 6, col: 2 },
             { id: "t5", type: "forest", row: 2, col: 7 },
             { id: "t6", type: "forest", row: 7, col: 4 },
-            { id: "t7", type: "forest", row: 8, col: 5 }
+            { id: "t7", type: "forest", row: 8, col: 5 },
+            { id: "t8", type: "swamp", row: 5, col: 5 }
         ]
     },
 
@@ -51,84 +73,411 @@ const GAME_CONFIG = {
 };
 
 /**
- * ====================== 【完整版】解耦效果系统 Effect System ======================
- * 完全模块化：定义 + 处理逻辑分离，支持技能和地形自由组合
+ * ====================== 【重构版】组件化效果系统 ======================
  */
 const EFFECT_LIBRARY = {
-    poison: { id: "poison", name: "中毒", emoji: "☠️", desc: "每回合结束受到伤害", duration: 3, tickDamage: 3, stackable: true, color: "emerald" },
-    burn:   { id: "burn",   name: "燃烧", emoji: "🔥", desc: "每回合结束受到伤害", duration: 2, tickDamage: 5, stackable: false, color: "rose" },
-    slow:   { id: "slow",   name: "减速", emoji: "🐢", desc: "移动范围减少", duration: 2, moveReduce: 2, stackable: true, color: "cyan" },
-    stun:   { id: "stun",   name: "禁锢", emoji: "⛓️", desc: "无法移动和攻击", duration: 1, disableMove: true, disableAttack: true, stackable: false, color: "slate" },
-    blind:  { id: "blind",  name: "致盲", emoji: "🌫️", desc: "攻击范围减少", duration: 2, rangeReduce: 1, stackable: true, color: "amber" },
-    silence:{ id: "silence",name: "沉默", emoji: "🔇", desc: "无法使用技能", duration: 2, disableSkill: true, stackable: false, color: "violet" },
-    regen:  { id: "regen",  name: "生命回复", emoji: "❤️", desc: "每回合回复生命", duration: 3, tickHeal: 4, stackable: true, color: "emerald" },
-    atkBuff:{ id: "atkBuff",name: "攻击强化", emoji: "⚔️", desc: "攻击力提升", duration: 3, atkAdd: 4, stackable: true, color: "amber" },
-    defBuff:{ id: "defBuff",name: "防御强化", emoji: "🛡️", desc: "防御力提升", duration: 3, defAdd: 3, stackable: true, color: "sky" },
-    tempSkill: { id: "tempSkill", name: "临时技能", emoji: "✨", desc: "获得临时技能", duration: 2, grantSkill: null, stackable: false, color: "violet" }
+    poison: {
+        id: "poison", name: "中毒", emoji: "☠️", color: "emerald", duration: 3, stackable: true,
+        desc: "每回合结束受到伤害，数值随层数叠加",
+        components: { tick: { damage: 3 } }
+    },
+    burn: {
+        id: "burn", name: "燃烧", emoji: "🔥", color: "rose", duration: 2, stackable: false,
+        desc: "每回合结束受到较高伤害",
+        components: { tick: { damage: 5 } }
+    },
+    slow: {
+        id: "slow", name: "减速", emoji: "🐢", color: "cyan", duration: 2, stackable: true,
+        desc: "移动范围减少",
+        components: { stats: { move: -2 } }
+    },
+    stun: {
+        id: "stun", name: "禁锢", emoji: "⛓️", color: "slate", duration: 1, stackable: false,
+        desc: "无法移动和攻击",
+        components: { inhibit: { move: true, attack: true } }
+    },
+    blind: {
+        id: "blind", name: "致盲", emoji: "🌫️", color: "amber", duration: 2, stackable: true,
+        desc: "攻击范围减少",
+        components: { stats: { range: -1 } }
+    },
+    silence: {
+        id: "silence", name: "沉默", emoji: "🔇", color: "violet", duration: 2, stackable: false,
+        desc: "无法使用技能",
+        components: { inhibit: { skill: true } }
+    },
+    regen: {
+        id: "regen", name: "生命回复", emoji: "❤️", color: "emerald", duration: 3, stackable: true,
+        desc: "每回合回复生命",
+        components: { tick: { heal: 4 } }
+    },
+    atkBuff: {
+        id: "atkBuff", name: "攻击强化", emoji: "⚔️", color: "amber", duration: 3, stackable: true,
+        desc: "攻击力提升",
+        components: { stats: { atk: 4 } }
+    },
+    defBuff: {
+        id: "defBuff", name: "防御强化", emoji: "🛡️", color: "sky", duration: 3, stackable: true,
+        desc: "防御力提升",
+        components: { stats: { def: 3 } }
+    },
+    commander: {
+        id: "commander", name: "统帅光环", emoji: "🚩", color: "indigo", duration: 99, stackable: false,
+        desc: "增加周围 2 格友军 5 点攻击力",
+        components: { aura: { range: 2, target: "ally", stats: { atk: 5 } } }
+    },
+    thorns: {
+        id: "thorns", name: "荆棘", emoji: "🌵", color: "lime", duration: 3, stackable: false,
+        desc: "受到近战攻击时，反弹 4 点伤害",
+        components: { trigger: { onDefend: "thornsEffect" } }
+    },
+    lifesteal: {
+        id: "lifesteal", name: "吸血", emoji: "🧛", color: "rose", duration: 3, stackable: false,
+        desc: "攻击造成伤害时，回复 50% 伤害量的生命值",
+        components: { trigger: { onAttack: "lifestealEffect" } }
+    },
+    manaAura: {
+        id: "manaAura", name: "法力泉涌", emoji: "💎", color: "cyan", duration: 99, stackable: false,
+        desc: "周围 1 格的友军禁止使用技能（测试光环禁用）",
+        components: { aura: { range: 1, target: "ally", inhibit: { skill: true } } }
+    },
+    berserk: {
+        id: "berserk", name: "狂暴", emoji: "💢", color: "rose", duration: 2, stackable: true,
+        desc: "大幅提升攻击力(+8)，但防御力大幅下降(-5)",
+        components: { stats: { atk: 8, def: -5 } }
+    },
+    forestBuff: {
+        id: "forestBuff", name: "森林隐蔽", emoji: "🌲", color: "emerald", duration: 99, stackable: false,
+        desc: "处于森林中，移动和攻击范围减1，且外部单位只能相邻攻击（限位组件）",
+        components: {
+            stats: { move: -1, range: -1 },
+            protect: { limitRange: 1 } // 新组件：限制攻击者距离
+        }
+    },
+    riverSlow: {
+        id: "riverSlow", name: "河流阻力", emoji: "🌊", color: "sky", duration: 99, stackable: false,
+        desc: "处于河流中，移动力大幅受限",
+        components: { stats: { move: -3 } } // 模拟限移 1 格的效果
+    }
 };
 
 /**
- * 效果处理器（完全解耦）
+ * 效果组件处理器 - 预留接口，支持未来通过代码注册新组件
+ */
+const COMPONENT_PROCESSORS = {
+    tick: (unit, eff, params) => {
+        const stacks = eff.stacks || 1;
+        if (params.damage) {
+            const dmg = params.damage * stacks;
+            unit.hp = Math.max(0, unit.hp - dmg);
+            addLog(`${unit.emoji} 受到 ${dmg} 点 <span class="text-rose-400">持续伤害</span>`, "rose");
+        }
+        if (params.heal) {
+            const heal = params.heal * stacks;
+            unit.hp = Math.min(unit.maxHp, unit.hp + heal);
+            addLog(`${unit.emoji} 获得 ${heal} 点 <span class="text-emerald-400">持续治疗</span>`, "emerald");
+        }
+    },
+    stats: (unit, eff, params, statName) => {
+        const stacks = eff.stacks || 1;
+        return params[statName] ? params[statName] * stacks : 0;
+    },
+    inhibit: (unit, eff, params, action) => {
+        return params[action] || false;
+    },
+    trigger: (unit, eff, params, event, data) => {
+        const stacks = eff.stacks || 1;
+        const handlers = {
+            thornsEffect: (u, d) => {
+                if (d.attacker && d.range === 1) {
+                    const dmg = 4 * stacks;
+                    d.attacker.hp = Math.max(0, d.attacker.hp - dmg);
+                    addLog(`🌵 荆棘反伤！对 ${d.attacker.emoji} 造成 ${dmg} 点伤害`, "lime");
+                    AnimationManager.showDamagePopup(dmg, d.attacker.row, d.attacker.col);
+                }
+            },
+            lifestealEffect: (u, d) => {
+                if (d.damageDealt > 0) {
+                    const heal = Math.floor(d.damageDealt * 0.5 * stacks);
+                    u.hp = Math.min(u.maxHp, u.hp + heal);
+                    addLog(`🧛 吸血！回复 ${heal} 点生命`, "rose");
+                }
+            },
+            // 新增内置通用触发逻辑
+            onKillHeal: (u, d) => {
+                const heal = 8 * stacks;
+                u.hp = Math.min(u.maxHp, u.hp + heal);
+                addLog(`💀 击杀奖励！${u.emoji} 回复 ${heal} 点生命`, "emerald");
+            },
+            onMoveDmg: (u, d) => {
+                const dmg = 2 * stacks;
+                u.hp = Math.max(0, u.hp - dmg);
+                addLog(`🩹 移动受创！${u.emoji} 受到 ${dmg} 点伤害`, "rose");
+                AnimationManager.showDamagePopup(dmg, u.row, u.col);
+            }
+        };
+        const funcName = params[event];
+        if (funcName && handlers[funcName]) handlers[funcName](unit, data);
+    }
+};
+
+/**
+ * 效果处理器核心
  */
 const EFFECT_HANDLERS = {
-    tick(unit, eff) {
-        const template = EFFECT_LIBRARY[eff.id];
-        if (template.tickDamage) unit.hp = Math.max(0, unit.hp - template.tickDamage);
-        if (template.tickHeal)   unit.hp = Math.min(unit.maxHp, unit.hp + template.tickHeal);
+    // 统一获取配置（如果实例有自定义组件则用实例的，否则用库模板的）
+    getConfig(eff) {
+        const template = EFFECT_LIBRARY[eff.id] || {};
+        return {
+            name: eff.name || template.name || "未知状态",
+            emoji: eff.emoji || template.emoji || "✨",
+            color: eff.color || template.color || "slate",
+            desc: eff.desc || template.desc || "",
+            duration: eff.duration !== undefined ? eff.duration : template.duration,
+            stackable: eff.stackable !== undefined ? eff.stackable : template.stackable,
+            components: eff.components || template.components || {}
+        };
     },
 
-    getEffectiveStat(unit, stat) {
-        if (!unit.activeEffects) return 0;
-        let value = 0;
-        unit.activeEffects.forEach(eff => {
-            const t = EFFECT_LIBRARY[eff.id];
-            if (stat === "atk" && t.atkAdd) value += t.atkAdd;
-            if (stat === "def" && t.defAdd) value += t.defAdd;
-            if (stat === "move" && t.moveReduce) value -= t.moveReduce;
-            if (stat === "range" && t.rangeReduce) value -= t.rangeReduce;
+    /**
+     * 检查组件条件是否满足
+     */
+    checkCondition(unit, condition) {
+        if (!condition) return true;
+        const { stat, operator, value, percent } = condition;
+
+        let currentVal;
+        if (stat === "hp") currentVal = percent ? (unit.hp / unit.maxHp) * 100 : unit.hp;
+        else if (stat === "mana") currentVal = percent ? (unit.currentMana / unit.maxMana) * 100 : unit.currentMana;
+        else currentVal = unit[stat];
+
+        switch (operator) {
+            case ">": return currentVal > value;
+            case "<": return currentVal < value;
+            case ">=": return currentVal >= value;
+            case "<=": return currentVal <= value;
+            case "==": return currentVal == value;
+            default: return true;
+        }
+    },
+
+    tick(unit, eff) {
+        const config = this.getConfig(eff);
+        if (config.components.tick) {
+            if (!this.checkCondition(unit, config.components.tick.condition)) return;
+            COMPONENT_PROCESSORS.tick(unit, eff, config.components.tick);
+        }
+    },
+
+    /**
+     * 获取属性修正及来源
+     */
+    getStatModifier(unit, stat) {
+        const sources = [];
+        let total = 0;
+
+        // 1. 基础状态 (Active Effects)
+        if (unit.activeEffects) {
+            unit.activeEffects.forEach(eff => {
+                const config = this.getConfig(eff);
+                if (config.components.stats) {
+                    if (!this.checkCondition(unit, config.components.stats.condition)) return;
+                    const mod = COMPONENT_PROCESSORS.stats(unit, eff, config.components.stats, stat);
+                    if (mod !== 0) {
+                        total += mod;
+                        sources.push({ name: config.name, icon: config.emoji, value: mod, type: "effect" });
+                    }
+                }
+            });
+        }
+
+        // 2. 光环 (Dynamic Auras)
+        const auras = this.calculateAurasForUnit(unit);
+        auras.forEach(aura => {
+            if (aura.stats && aura.stats[stat]) {
+                total += aura.stats[stat];
+                sources.push({ name: aura.sourceName, icon: aura.icon, value: aura.stats[stat], type: "aura" });
+            }
         });
-        return value;
+
+        return { total, sources };
     },
 
     isDisabled(unit, action) {
-        if (!unit.activeEffects) return false;
-        return unit.activeEffects.some(eff => {
-            const t = EFFECT_LIBRARY[eff.id];
-            if (action === "move" && t.disableMove) return true;
-            if (action === "attack" && t.disableAttack) return true;
-            if (action === "skill" && t.disableSkill) return true;
-            return false;
+        // 状态限制
+        const fromEffects = (unit.activeEffects || []).some(eff => {
+            const config = this.getConfig(eff);
+            if (!config.components.inhibit) return false;
+            if (!this.checkCondition(unit, config.components.inhibit.condition)) return false;
+            return COMPONENT_PROCESSORS.inhibit(unit, eff, config.components.inhibit, action);
         });
-    }
+        if (fromEffects) return true;
+
+        // 光环限制
+        const auras = this.calculateAurasForUnit(unit);
+        return auras.some(aura => aura.inhibit && aura.inhibit[action]);
+    },
+
+    /**
+     * 获取保护组件 (例如森林的射程限制)
+     */
+    getProtection(target) {
+        const auras = this.calculateAurasForUnit(target);
+        let minLimit = Infinity;
+        auras.forEach(aura => {
+            if (aura.protect && aura.protect.limitRange !== undefined) {
+                minLimit = Math.min(minLimit, aura.protect.limitRange);
+            }
+        });
+        return minLimit === Infinity ? null : minLimit;
+    },
+
+    trigger(unit, event, data) {
+        if (!unit.activeEffects) return;
+        unit.activeEffects.forEach(eff => {
+            const config = this.getConfig(eff);
+            if (config.components.trigger) {
+                COMPONENT_PROCESSORS.trigger(unit, eff, config.components.trigger, event, data);
+            }
+        });
+    },
+
+    calculateAurasForUnit(target) {
+        const activeAuras = [];
+        const allEntities = [...STATE.friendlyUnits, ...STATE.enemyUnits, ...STATE.terrainUnits];
+        const targetTeam = STATE.friendlyUnits.includes(target) ? "friendly" : "enemy";
+
+        allEntities.forEach(source => {
+            // 如果是战斗单位，死亡则无光环；如果是自己，通常不吃自己的光环（除非特殊定义）
+            if (source.hp !== undefined && source.hp <= 0) return;
+            if (source === target && !source.isTerrain) return;
+
+            const sourceTeam = STATE.friendlyUnits.includes(source) ? "friendly" : (STATE.enemyUnits.includes(source) ? "enemy" : "terrain");
+
+            // 处理普通单位的效果光环
+            source.activeEffects?.forEach(eff => {
+                const config = this.getConfig(eff);
+                const aura = config.components.aura;
+                if (aura) {
+                    const dist = Math.abs(source.row - target.row) + Math.abs(source.col - target.col);
+                    if (dist <= aura.range) {
+                        let match = this.checkAuraMatch(aura.target, sourceTeam, targetTeam);
+                        if (match) {
+                            activeAuras.push({
+                                id: eff.id,
+                                sourceName: source.name,
+                                icon: config.emoji,
+                                stats: aura.stats,
+                                inhibit: aura.inhibit,
+                                protect: aura.protect
+                            });
+                        }
+                    }
+                }
+            });
+
+            // 处理地形自带的光环 (非触发型)
+            if (source.isTerrain && source.effectId && !source.effectIsTrigger) {
+                const terrainEff = source.effectConfig || { id: source.effectId };
+                const config = this.getConfig(terrainEff);
+                if (source.row === target.row && source.col === target.col) {
+                    activeAuras.push({
+                        id: config.id,
+                        sourceName: source.name,
+                        icon: config.emoji,
+                        stats: config.components.stats,
+                        inhibit: config.components.inhibit,
+                        protect: config.components.protect
+                    });
+                }
+            }
+        });
+        return activeAuras;
+    },
+
+    checkAuraMatch(auraTarget, sourceTeam, targetTeam) {
+        if (auraTarget === "all") return true;
+        if (sourceTeam === "terrain") return true; // 地形对所有人有效（或由地形定义决定，暂定全员）
+        if (auraTarget === "ally" && sourceTeam === targetTeam) return true;
+        if (auraTarget === "enemy" && sourceTeam !== targetTeam) return true;
+        return false;
+    },
 };
 
 /**
- * 应用效果（给技能和地形统一使用）
+ * 应用效果
+ * @param {Object} unit 目标单位
+ * @param {string|Object} effectData 效果ID或完整效果配置对象
+ * @param {number} customDuration 可选持续回合
  */
-function applyEffect(unit, effectId, customDuration = null) {
+function applyEffect(unit, effectData, customDuration = null) {
     if (!unit.activeEffects) unit.activeEffects = [];
-    const template = EFFECT_LIBRARY[effectId];
-    if (!template) return;
 
-    const effect = {
-        id: effectId,
-        remainingTurns: customDuration !== null ? customDuration : template.duration
-    };
-
-    if (template.stackable) {
-        const existing = unit.activeEffects.find(e => e.id === effectId);
-        if (existing) {
-            existing.remainingTurns = Math.max(existing.remainingTurns, effect.remainingTurns);
-            return;
-        }
+    // 如果是对象，则视为实例副本；如果是字符串，则视为引用 ID
+    let effectInstance;
+    if (typeof effectData === 'string') {
+        const template = EFFECT_LIBRARY[effectData];
+        if (!template) return;
+        effectInstance = { id: effectData };
+    } else {
+        effectInstance = JSON.parse(JSON.stringify(effectData)); // 深度复制实例
     }
-    unit.activeEffects.push(effect);
-    addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${template.color}-400">${template.emoji} ${template.name}</span>`, template.color);
+
+    const config = EFFECT_HANDLERS.getConfig(effectInstance);
+    const effectId = effectInstance.id;
+
+    // 检查是否已有同名/同ID效果
+    const existing = unit.activeEffects.find(e => e.id === effectId);
+    if (existing) {
+        if (config.stackable) {
+            existing.stacks = (existing.stacks || 1) + 1;
+            addLog(`${unit.emoji} ${unit.name} 的 ${config.name} 叠加至 <span class="font-bold">${existing.stacks}</span> 层`, config.color);
+            existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : config.duration);
+        } else {
+            // 不可叠加，检查数值是否更高
+            if (compareEffectStrength(existing, effectInstance)) {
+                const idx = unit.activeEffects.indexOf(existing);
+                effectInstance.stacks = 1;
+                effectInstance.remainingTurns = customDuration !== null ? customDuration : config.duration;
+                unit.activeEffects[idx] = effectInstance;
+                addLog(`${unit.emoji} ${unit.name} 的 ${config.name} 被更强力的效果覆盖`, config.color);
+            } else {
+                existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : config.duration);
+                addLog(`${unit.emoji} ${unit.name} 获得了重复的 ${config.name}，仅刷新持续时间`, "slate");
+            }
+        }
+    } else {
+        effectInstance.stacks = 1;
+        effectInstance.remainingTurns = customDuration !== null ? customDuration : config.duration;
+        unit.activeEffects.push(effectInstance);
+        addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${config.color}-400">${config.emoji} ${config.name}</span>`, config.color);
+    }
 }
 
 /**
- * 每回合结束统一 Tick 所有效果
+ * 比较两个效果实例的“强度”
  */
+function compareEffectStrength(oldEff, newEff) {
+    const cOld = EFFECT_HANDLERS.getConfig(oldEff).components;
+    const cNew = EFFECT_HANDLERS.getConfig(newEff).components;
+
+    const getPower = (comps) => {
+        let p = 0;
+        if (comps.stats) {
+            Object.values(comps.stats).forEach(v => {
+                if (typeof v === 'number') p += Math.abs(v);
+            });
+        }
+        if (comps.tick) {
+            if (comps.tick.damage) p += comps.tick.damage;
+            if (comps.tick.heal) p += comps.tick.heal;
+        }
+        return p;
+    };
+
+    return getPower(cNew) > getPower(cOld);
+}
+
 function tickAllEffects() {
     [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(unit => {
         if (!unit.activeEffects || unit.hp <= 0) return;
@@ -147,13 +496,10 @@ function tickAllEffects() {
     });
 }
 
-/**
- * 计算当前有效属性（不修改原始值）
- */
-function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getEffectiveStat(unit, "atk"); }
-function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getEffectiveStat(unit, "def"); }
-function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange - EFFECT_HANDLERS.getEffectiveStat(unit, "move")); }
-function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange - EFFECT_HANDLERS.getEffectiveStat(unit, "range")); }
+function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getStatModifier(unit, "atk").total; }
+function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getStatModifier(unit, "def").total; }
+function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange + EFFECT_HANDLERS.getStatModifier(unit, "move").total); }
+function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange + EFFECT_HANDLERS.getStatModifier(unit, "range").total); }
 
 /**
  * 【架构重构】GameState 类 - 统一管理所有游戏状态
@@ -170,7 +516,9 @@ class GameState {
         this.selectedSkill = null;
         this.editMode = false;
         this.editingUnit = null;     // {team, id, isTerrain, pendingAdd, row, col, pendingCopy, sourceId}
+        this.editingSkillId = null;
         this.previewTimeout = null;
+        this.editorHistory = [];     // 存储渲染函数的引用或状态对象
     }
 
     reset() {
@@ -183,7 +531,9 @@ class GameState {
         this.selectedSkill = null;
         this.editMode = false;
         this.editingUnit = null;
+        this.editingSkillId = null;
         this.previewTimeout = null;
+        this.editorHistory = [];
     }
 }
 
@@ -427,8 +777,14 @@ function createCombatUnit(base) {
 
 function isInRange(unit, targetRow, targetCol, range) {
     const manhattan = Math.abs(unit.row - targetRow) + Math.abs(unit.col - targetCol);
-    const targetTerrain = STATE.terrainUnits.find(t => t.row === targetRow && t.col === targetCol);
-    if (targetTerrain && targetTerrain.type === "forest") return manhattan <= 1;
+
+    // 检查目标是否有保护状态 (如森林)
+    const { combatUnit } = getCellContent(targetRow, targetCol);
+    if (combatUnit) {
+        const limit = EFFECT_HANDLERS.getProtection(combatUnit);
+        if (limit !== null && manhattan > limit) return false;
+    }
+
     return manhattan <= range;
 }
 
@@ -561,12 +917,58 @@ function updateCellContent(cell, row, col) {
     );
     cell.style.boxShadow = "";   // 清除自定义阴影
 
+    // 清理旧的状态图标容器
+    const oldStatus = cell.querySelector(".status-icons-container");
+    if (oldStatus) oldStatus.remove();
+
     // 战斗单位
     if (combatUnit) {
         cell.setAttribute("data-combat", combatUnit.emoji);
         cell.style.background = combatTeam === "friendly"
             ? "rgba(16, 185, 129, 0.12)"
             : "rgba(239, 68, 68, 0.12)";
+
+        // 状态图标显示逻辑 (纵向循环滚动)
+        if (combatUnit.activeEffects && combatUnit.activeEffects.length > 0) {
+            const container = document.createElement("div");
+            container.className = "status-icons-container";
+            container.style.pointerEvents = "auto"; // 允许点击图标查看详情
+            cell.appendChild(container);
+
+            const effects = combatUnit.activeEffects;
+            let currentIndex = 0;
+
+            const updateIcons = () => {
+                if (!cell.contains(container)) return; // 单元格已刷新，停止循环
+                container.innerHTML = "";
+                const eff = effects[currentIndex];
+                const config = EFFECT_HANDLERS.getConfig(eff);
+                if (config) {
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "status-icon-wrapper active";
+                    wrapper.innerHTML = `<span>${config.emoji}</span>${eff.stacks > 1 ? `<span class="status-stacks">${eff.stacks}</span>` : ""}`;
+                    wrapper.onclick = (e) => {
+                        e.stopPropagation();
+                        showStatusDetail(e, eff);
+                    };
+                    container.appendChild(wrapper);
+                }
+
+                if (effects.length > 1) {
+                    cell.dataset.statusTimer = setTimeout(() => {
+                        const active = container.querySelector(".status-icon-wrapper");
+                        if (active) {
+                            active.classList.remove("active");
+                            active.classList.add("exit");
+                        }
+                        currentIndex = (currentIndex + 1) % effects.length;
+                        cell.dataset.statusTimer = setTimeout(updateIcons, 500);
+                    }, 2500);
+                }
+            };
+            if (cell.dataset.statusTimer) clearTimeout(parseInt(cell.dataset.statusTimer));
+            updateIcons();
+        }
     } else {
         cell.removeAttribute("data-combat");
         cell.style.background = "";
@@ -621,11 +1023,11 @@ function highlightRanges() {
         return;
     }
 
-    let maxMove = (sel.team === "friendly") ? entity.remainingMove : entity.moveRange;
+    let maxMove = (sel.team === "friendly") ? entity.remainingMove : getEffectiveMoveRange(entity);
     if (maxMove <= 0) maxMove = 0;
     const reachable = calculateReachable(entity.row, entity.col, maxMove, entity);
 
-    let effectiveAtk = entity.forestModifier ? Math.max(1, entity.atkRange - 1) : entity.atkRange;
+    let effectiveAtk = getEffectiveAtkRange(entity);
     if (effectiveAtk <= 0) effectiveAtk = 0;
 
     const hasActionLeft = sel.team === "friendly" ? !entity.hasAttacked : true;
@@ -637,11 +1039,8 @@ function highlightRanges() {
         const key = `${r},${c}`;
         const dist = reachable[key];
         const isMove = (maxMove > 0 && dist !== undefined && dist > 0);
-        const manhattan = Math.abs(r - entity.row) + Math.abs(c - entity.col);
 
-        let canAttack = (effectiveAtk > 0 && manhattan <= effectiveAtk && hasActionLeft);
-        const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
-        if (targetTerrain && targetTerrain.type === "forest") canAttack = (manhattan <= 1 && hasActionLeft);
+        let canAttack = hasActionLeft && isInRange(entity, r, c, effectiveAtk);
 
         if (isMove && canAttack) cell.classList.add("highlight-overlap");
         else if (isMove) cell.classList.add("highlight-move");
@@ -656,11 +1055,9 @@ function highlightSkillRange(unit, skillId) {
     cells.forEach(cell => {
         const r = parseInt(cell.dataset.row), c = parseInt(cell.dataset.col);
         cell.classList.remove("highlight-move", "highlight-attack", "highlight-overlap", "highlight-skill");
-        const manhattan = Math.abs(r - unit.row) + Math.abs(c - unit.col);
-        let canCast = manhattan <= skill.range;
-        const targetTerrain = STATE.terrainUnits.find(t => t.row === r && t.col === c);
-        if (targetTerrain && targetTerrain.type === "forest") canCast = manhattan <= 1;
-        if (canCast) cell.classList.add("highlight-skill");
+        if (isInRange(unit, r, c, skill.range)) {
+            cell.classList.add("highlight-skill");
+        }
     });
 }
 
@@ -709,16 +1106,8 @@ function applyTerrainEffect(unit) {
     const terrain = STATE.terrainUnits[terrainIndex];
     const tConfig = terrain;
 
-    unit.forestModifier = false;
-
-    if (terrain.type === "river") {
-        unit.remainingMove = Math.min(unit.remainingMove, 1);
-        addLog(`进入🌊河流，剩余移动限制为 <span class="font-mono">1</span> 格`, "amber");
-    } else if (terrain.type === "forest") {
-        unit.forestModifier = true;
-        if (unit.remainingMove > 0) unit.remainingMove = Math.max(0, unit.remainingMove - 1);
-        addLog(`进入🌲森林，移动与攻击范围 -1`, "amber");
-    } else if (tConfig.effect) {
+    // 特殊处理一次性地形逻辑 (回复点)
+    if (tConfig.effect) {
         if (tConfig.effect === "mana") {
             unit.currentMana = Math.min(unit.maxMana, unit.currentMana + tConfig.value);
             addLog(`踩到 ${tConfig.emoji} 回蓝点，恢复 <span class="font-mono">${tConfig.value}</span> 蓝量`, "cyan");
@@ -729,9 +1118,9 @@ function applyTerrainEffect(unit) {
         if (tConfig.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
     }
 
-    // 新增：支持地形自带效果
-    if (terrain.effectId) {
-        applyEffect(unit, terrain.effectId, terrain.effectDuration || 3);
+    // 新增：支持地形自带效果 (仅限触发型)
+    if (terrain.effectId && terrain.effectIsTrigger) {
+        applyEffect(unit, terrain.effectConfig || terrain.effectId, terrain.effectDuration || 3);
     }
     if (terrain.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
 }
@@ -757,21 +1146,38 @@ function attemptPlayerMove(unit, targetRow, targetCol) {
     unit.remainingMove -= dist;
     addLog(`移动 <span class="font-mono">${dist}</span> 格（剩余 <span class="font-mono">${unit.remainingMove}</span>）`, "emerald");
     AnimationManager.animateMove(fromRow, fromCol, targetRow, targetCol, unit.emoji);
+
+    // 触发移动事件
+    EFFECT_HANDLERS.trigger(unit, "onMove", { fromRow, fromCol, toRow: targetRow, toCol: targetCol, dist });
+
     applyTerrainEffect(unit);
     return true;
 }
 
 function performAttack(attacker, defender) {
     if (EFFECT_HANDLERS.isDisabled(attacker, "attack")) {
-        addLog(`${attacker.emoji} ${attacker.name} 被禁锢/致盲，无法攻击！`, "slate");
+        addLog(`${attacker.emoji} ${attacker.name} 被控制，无法攻击！`, "slate");
         return;
     }
 
-    let damage = Math.max(1, getEffectiveAtk(attacker) - defender.def);
+    if (!isInRange(attacker, defender.row, defender.col, getEffectiveAtkRange(attacker))) {
+        addLog(`目标不在攻击范围内或受到地形保护`, "slate");
+        return;
+    }
+
+    const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
+    let damage = Math.max(1, getEffectiveAtk(attacker) - getEffectiveDef(defender));
     defender.hp = Math.max(0, defender.hp - damage);
 
-    const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
+    const attackerColor = (attacker.team === "friendly") ? "emerald" : "rose";
     addLog(`<span class="text-${attackerColor}-400">${attacker.emoji}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
+
+    // 触发事件
+    EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range });
+    EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range });
+    if (defender.hp <= 0) {
+        EFFECT_HANDLERS.trigger(attacker, "onKill", { target: defender });
+    }
 
     AnimationManager.showDamagePopup(damage, defender.row, defender.col);
     if (attacker.atkRange === 1) {
@@ -783,18 +1189,36 @@ function performAttack(attacker, defender) {
 
 function performSkill(attacker, skillId, defender) {
     const skill = GAME_CONFIG.SKILLS[skillId];
-    let damage = Math.max(1, skill.damage - defender.def);
-    defender.hp = Math.max(0, defender.hp - damage);
+    if (!isInRange(attacker, defender.row, defender.col, skill.range)) {
+        addLog(`技能目标不在射程内或受到地形保护`, "slate");
+        return;
+    }
+    const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
+    let damage = Math.max(0, skill.damage - getEffectiveDef(defender));
 
-    addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+    // 如果技能本身有伤害
+    if (skill.damage > 0) {
+        defender.hp = Math.max(0, defender.hp - damage);
+        addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
+        AnimationManager.showDamagePopup(damage, defender.row, defender.col);
 
-    // 新增：技能可以附加效果
-    if (skill.effectId) {
-        applyEffect(defender, skill.effectId, skill.effectDuration);
+        // 触发攻击/防御事件
+        EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range, isSkill: true });
+        EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range, isSkill: true });
+        if (defender.hp <= 0) {
+            EFFECT_HANDLERS.trigger(attacker, "onKill", { target: defender });
+        }
+    } else {
+        addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 已发动`, "cyan");
     }
 
-    // 新增：伤害跳字（技能伤害）
-    AnimationManager.showDamagePopup(damage, defender.row, defender.col);
+    // 施加状态 (对目标)
+    const targetEffects = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+    targetEffects.forEach(eff => applyEffect(defender, eff, eff.duration));
+
+    // 施加状态 (对自己)
+    const selfEffects = skill.selfEffects || [];
+    selfEffects.forEach(eff => applyEffect(attacker, eff, eff.duration));
 
     AnimationManager.animateProjectile(attacker.row, attacker.col, defender.row, defender.col, skill.emoji);
     AnimationManager.showSkillNamePopup(skill.name, defender.row, defender.col);
@@ -845,7 +1269,7 @@ function handleCellClick(row, col) {
 
     if (STATE.selectedSkill) {
         const { combatUnit, combatTeam } = getCellContent(row, col);
-        if (combatTeam === "enemy") {
+        if (combatUnit) {
             const actor = getUnit("friendly", STATE.selected.id);
             const skillId = STATE.selectedSkill;
             const skill = GAME_CONFIG.SKILLS[skillId];
@@ -999,9 +1423,36 @@ function handleEditClick(row, col) {
 }
 
 /**
+ * 编辑器导航系统
+ */
+function pushEditorState(renderFn, ...args) {
+    STATE.editorHistory.push({ renderFn, args });
+    renderFn(...args);
+}
+
+function popEditorState() {
+    if (STATE.editorHistory.length <= 1) {
+        STATE.editorHistory = [];
+        renderEditForm();
+        return;
+    }
+    STATE.editorHistory.pop(); // 弹出当前的
+    const last = STATE.editorHistory[STATE.editorHistory.length - 1];
+    last.renderFn(...last.args);
+}
+
+function clearEditorHistory() {
+    STATE.editorHistory = [];
+}
+
+/**
  * 编辑器表单渲染（已优化：技能输入框增加标签 + 地形改为预设选择 + 空白格高亮）
  */
-function renderEditForm() {
+function renderEditForm(isBack = false) {
+    if (!isBack) {
+        clearEditorHistory();
+        STATE.editorHistory.push({ renderFn: renderEditForm, args: [true] });
+    }
     const container = document.getElementById("edit-unit-form");
     if (!STATE.editingUnit) {
         container.innerHTML = `<div class="text-center text-slate-400 py-12">点击棋盘上的任意格子开始编辑</div>`;
@@ -1073,7 +1524,7 @@ function renderEditForm() {
                 <div>
                     <div class="text-xs uppercase text-purple-300 mb-3 flex justify-between font-bold tracking-widest opacity-60">
                         <span>技能管理</span>
-                        <button onclick="showAddSkillForm()" class="text-[10px] px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg border border-purple-500/30">+ 新增技能</button>
+                        <button onclick="pushEditorState(showAddSkillForm)" class="text-[10px] px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg border border-purple-500/30">+ 新增技能</button>
                     </div>
                     <div id="edit-normal-skills" class="space-y-2"></div>
                     <div class="mt-4">
@@ -1111,6 +1562,423 @@ function renderEditForm() {
     }
     // 战斗单位技能列表保持原来逻辑
     if (!isTerrain && !isPendingAdd && unit) renderCurrentNormalSkills();
+
+    // 【新增】状态绑定显示
+    if (!isPendingAdd && unit) renderEffectBindingList(unit);
+
+    // 【新增】全局状态编辑器入口
+    if (!isPendingAdd) renderGlobalEffectEditorLink();
+}
+
+/**
+ * 渲染全局状态编辑器链接
+ */
+function renderGlobalEffectEditorLink() {
+    const container = document.createElement("div");
+    container.className = "mt-12 pt-6 border-t-2 border-dashed border-purple-500/20";
+    container.innerHTML = `
+        <button onclick="pushEditorState(showGlobalEffectEditor)" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+            <span>✨</span> 状态库管理器
+        </button>
+        <p class="text-[9px] text-slate-500 text-center mt-3 uppercase tracking-widest">在这里定义新的全局状态组件</p>
+    `;
+    document.getElementById("edit-unit-form").appendChild(container);
+}
+
+function showGlobalEffectEditor() {
+    const container = document.getElementById("edit-unit-form");
+    const html = `
+        <div class="bg-slate-900 border border-purple-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
+            <div class="flex justify-between items-center">
+                <div class="text-purple-400 font-black text-xl uppercase">状态库管理器</div>
+                <button onclick="popEditorState()" class="text-slate-500 hover:text-white">✕</button>
+            </div>
+
+            <div class="space-y-3 max-h-64 overflow-y-auto custom-scroll pr-2">
+                ${Object.keys(EFFECT_LIBRARY).map(id => {
+                    const t = EFFECT_LIBRARY[id];
+                    return `
+                    <div class="flex items-center gap-3 bg-slate-800/40 p-3 rounded-2xl border border-white/5">
+                        <span class="text-2xl">${t.emoji}</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-bold text-xs">${t.name}</div>
+                            <div class="text-[9px] text-slate-500 truncate">${t.desc}</div>
+                        </div>
+                        <button onclick="deleteGlobalEffect('${id}')" class="p-2 text-rose-500/50 hover:text-rose-400 transition-colors text-xs">删除</button>
+                    </div>`;
+                }).join("")}
+            </div>
+
+            <button onclick="pushEditorState(showCreateEffectForm)" class="w-full py-4 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 font-bold rounded-2xl transition-all">
+                + 定义新状态
+            </button>
+
+            <button onclick="popEditorState()" class="w-full py-3 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">返回</button>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function deleteGlobalEffect(id) {
+    if (confirm(`确定要从库中删除状态「${EFFECT_LIBRARY[id].name}」吗？已经绑定的单位可能会失效。`)) {
+        delete EFFECT_LIBRARY[id];
+        showGlobalEffectEditor();
+    }
+}
+
+function showCreateEffectForm(options = {}) {
+    const {
+        fromBinding = false,
+        isInstance = false,
+        baseEffect = null
+    } = options;
+
+    const container = document.getElementById("edit-unit-form");
+    const effectToEdit = baseEffect || {};
+    const config = EFFECT_HANDLERS.getConfig(effectToEdit);
+
+    container.innerHTML = `
+        <div class="bg-slate-900 border border-emerald-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl overflow-y-auto max-h-[85vh] custom-scroll">
+            <div class="text-emerald-400 font-black text-xl uppercase">${isInstance ? '编辑状态实例数值' : (fromBinding ? '绑定并定义新状态' : '定义全局状态模板')}</div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1">图标 (Emoji)</label>
+                    <input id="new-eff-emoji" value="${config.emoji || '✨'}" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1">状态名称</label>
+                    <input id="new-eff-name" value="${config.name || ''}" class="editor-input w-full px-4 py-2 rounded-xl">
+                </div>
+            </div>
+
+            <div class="${isInstance ? 'hidden' : ''}">
+                <label class="block text-[10px] font-bold text-slate-500 mb-1">状态 ID (引用库ID或新ID)</label>
+                <input id="new-eff-id" value="${effectToEdit.id || config.id || ''}" placeholder="atk_buff_2" class="editor-input w-full px-4 py-2 rounded-xl font-mono text-xs">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 mb-1">描述</label>
+                <input id="new-eff-desc" value="${config.desc || ''}" class="editor-input w-full px-4 py-2 rounded-xl text-xs">
+            </div>
+
+            <div class="space-y-4">
+                <div class="text-[10px] font-black text-emerald-500/60 uppercase tracking-widest">配置组件</div>
+
+                <!-- 属性组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">属性修正 (数值叠加)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="comp-stat-atk" type="number" value="${config.components.stats?.atk || ''}" placeholder="ATK +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-def" type="number" value="${config.components.stats?.def || ''}" placeholder="DEF +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-move" type="number" value="${config.components.stats?.move || ''}" placeholder="MOVE +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-range" type="number" value="${config.components.stats?.range || ''}" placeholder="RANGE +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                    </div>
+                </div>
+
+                <!-- 持续组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">周期触发</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="comp-tick-dmg" type="number" value="${config.components.tick?.damage || ''}" placeholder="每回合伤害" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-tick-heal" type="number" value="${config.components.tick?.heal || ''}" placeholder="每回合治疗" class="editor-input px-3 py-2 rounded-lg text-xs">
+                    </div>
+                </div>
+
+                <!-- 行为限制 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">行为限制</div>
+                    <div class="flex flex-wrap gap-4">
+                        <label class="flex items-center gap-2 text-[10px] text-slate-300">
+                            <input id="comp-inhibit-move" type="checkbox" ${config.components.inhibit?.move ? 'checked' : ''} class="accent-rose-500"> 禁止移动
+                        </label>
+                        <label class="flex items-center gap-2 text-[10px] text-slate-300">
+                            <input id="comp-inhibit-attack" type="checkbox" ${config.components.inhibit?.attack ? 'checked' : ''} class="accent-rose-500"> 禁止攻击
+                        </label>
+                        <label class="flex items-center gap-2 text-[10px] text-slate-300">
+                            <input id="comp-inhibit-skill" type="checkbox" ${config.components.inhibit?.skill ? 'checked' : ''} class="accent-rose-500"> 禁止技能
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 保护组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">特殊保护 (地形组件)</div>
+                    <div class="grid grid-cols-1 gap-2">
+                        <input id="comp-protect-range" type="number" value="${config.components.protect?.limitRange || ''}" placeholder="限制攻击者距离 (例如森林为1)" class="editor-input px-3 py-2 rounded-lg text-xs">
+                    </div>
+                </div>
+
+                <!-- 光环组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">光环配置 (影响周围单位)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="comp-aura-range" type="number" value="${config.components.aura?.range || ''}" placeholder="范围 (格)" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <select id="comp-aura-target" class="editor-input px-3 py-2 rounded-lg text-xs">
+                            <option value="ally" ${config.components.aura?.target === 'ally' ? 'selected' : ''}>仅友军</option>
+                            <option value="enemy" ${config.components.aura?.target === 'enemy' ? 'selected' : ''}>仅敌军</option>
+                            <option value="all" ${config.components.aura?.target === 'all' ? 'selected' : ''}>所有人</option>
+                        </select>
+                    </div>
+                    <div class="text-[9px] text-slate-500 italic">光环生效时会应用上述属性修正/行为限制</div>
+                </div>
+
+                <!-- 激活条件 (新增) -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-blue-500/20 space-y-3">
+                    <div class="text-[10px] font-bold text-blue-400 uppercase">激活条件 (仅当满足时生效)</div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <select id="comp-cond-stat" class="editor-input px-2 py-2 rounded-lg text-[10px]">
+                            <option value="">无条件</option>
+                            <option value="hp" ${config.components.condition?.stat === 'hp' ? 'selected' : ''}>HP</option>
+                            <option value="mana" ${config.components.condition?.stat === 'mana' ? 'selected' : ''}>MP</option>
+                            <option value="atk" ${config.components.condition?.stat === 'atk' ? 'selected' : ''}>ATK</option>
+                        </select>
+                        <select id="comp-cond-op" class="editor-input px-2 py-2 rounded-lg text-[10px]">
+                            <option value="<" ${config.components.condition?.operator === '<' ? 'selected' : ''}>&lt;</option>
+                            <option value=">" ${config.components.condition?.operator === '>' ? 'selected' : ''}>&gt;</option>
+                            <option value="<=" ${config.components.condition?.operator === '<=' ? 'selected' : ''}>&le;</option>
+                            <option value=">=" ${config.components.condition?.operator === '>=' ? 'selected' : ''}>&ge;</option>
+                            <option value="==" ${config.components.condition?.operator === '==' ? 'selected' : ''}>==</option>
+                        </select>
+                        <input id="comp-cond-val" type="number" value="${config.components.condition?.value || ''}" placeholder="数值" class="editor-input px-2 py-2 rounded-lg text-[10px]">
+                    </div>
+                    <label class="flex items-center gap-2 text-[9px] text-slate-400">
+                        <input id="comp-cond-pct" type="checkbox" ${config.components.condition?.percent ? 'checked' : ''} class="accent-blue-500"> 按百分比计算 (仅HP/MP)
+                    </label>
+                </div>
+
+                <!-- 触发器配置 (新增) -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-amber-500/20 space-y-3">
+                    <div class="text-[10px] font-bold text-amber-400 uppercase">触发器 (事件发生时执行)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="space-y-1">
+                            <label class="text-[8px] text-slate-500">移动时 (onMove)</label>
+                            <select id="comp-trig-move" class="editor-input w-full px-2 py-2 rounded-lg text-[10px]">
+                                <option value="">无</option>
+                                <option value="onMoveDmg" ${config.components.trigger?.onMove === 'onMoveDmg' ? 'selected' : ''}>移动受创</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[8px] text-slate-500">击杀时 (onKill)</label>
+                            <select id="comp-trig-kill" class="editor-input w-full px-2 py-2 rounded-lg text-[10px]">
+                                <option value="">无</option>
+                                <option value="onKillHeal" ${config.components.trigger?.onKill === 'onKillHeal' ? 'selected' : ''}>击杀回血</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 时长 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1">${isInstance ? '持续回合' : '默认持续时间'}</label>
+                        <input id="new-eff-dur" type="number" value="${config.duration !== undefined ? config.duration : 3}" class="editor-input w-full px-4 py-2 rounded-xl text-center">
+                    </div>
+                    <div class="flex items-center gap-2 pt-4">
+                        <input id="new-eff-stack" type="checkbox" ${config.stackable !== false ? 'checked' : ''} class="w-5 h-5 accent-emerald-500">
+                        <label class="text-xs font-bold text-slate-300">支持数值叠加</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="confirmCreateEffect()" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">确认</button>
+                <button onclick="popEditorState()" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
+            </div>
+        </div>
+    `;
+}
+
+function confirmCreateEffect() {
+    const id = document.getElementById("new-eff-id").value || ("eff_" + Date.now());
+    const name = document.getElementById("new-eff-name").value || "新状态";
+    const emoji = document.getElementById("new-eff-emoji").value || "✨";
+    const desc = document.getElementById("new-eff-desc").value || "";
+    const duration = parseInt(document.getElementById("new-eff-dur").value) || 3;
+    const stackable = document.getElementById("new-eff-stack").checked;
+
+    const components = {};
+
+    // 1. 属性
+    const stats = {};
+    if (parseInt(document.getElementById("comp-stat-atk").value)) stats.atk = parseInt(document.getElementById("comp-stat-atk").value);
+    if (parseInt(document.getElementById("comp-stat-def").value)) stats.def = parseInt(document.getElementById("comp-stat-def").value);
+    if (parseInt(document.getElementById("comp-stat-move").value)) stats.move = parseInt(document.getElementById("comp-stat-move").value);
+    if (parseInt(document.getElementById("comp-stat-range").value)) stats.range = parseInt(document.getElementById("comp-stat-range").value);
+    if (Object.keys(stats).length > 0) components.stats = stats;
+
+    // 2. Tick
+    const tick = {};
+    if (parseInt(document.getElementById("comp-tick-dmg").value)) tick.damage = parseInt(document.getElementById("comp-tick-dmg").value);
+    if (parseInt(document.getElementById("comp-tick-heal").value)) tick.heal = parseInt(document.getElementById("comp-tick-heal").value);
+    if (Object.keys(tick).length > 0) components.tick = tick;
+
+    // 3. 限制
+    const inhibit = {};
+    if (document.getElementById("comp-inhibit-move").checked) inhibit.move = true;
+    if (document.getElementById("comp-inhibit-attack").checked) inhibit.attack = true;
+    if (document.getElementById("comp-inhibit-skill").checked) inhibit.skill = true;
+    if (Object.keys(inhibit).length > 0) components.inhibit = inhibit;
+
+    // 4. 保护
+    const pRange = parseInt(document.getElementById("comp-protect-range").value);
+    if (pRange) components.protect = { limitRange: pRange };
+
+    // 5. 光环
+    const auraRange = parseInt(document.getElementById("comp-aura-range").value);
+    if (auraRange) {
+        components.aura = {
+            range: auraRange,
+            target: document.getElementById("comp-aura-target").value,
+            stats: stats,
+            inhibit: inhibit
+        };
+    }
+
+    // 6. 条件
+    const condStat = document.getElementById("comp-cond-stat").value;
+    if (condStat) {
+        components.condition = {
+            stat: condStat,
+            operator: document.getElementById("comp-cond-op").value,
+            value: parseInt(document.getElementById("comp-cond-val").value) || 0,
+            percent: document.getElementById("comp-cond-pct").checked
+        };
+    }
+
+    // 7. 触发器 (NEW)
+    const trigger = {};
+    if (document.getElementById("comp-trig-move").value) trigger.onMove = document.getElementById("comp-trig-move").value;
+    if (document.getElementById("comp-trig-kill").value) trigger.onKill = document.getElementById("comp-trig-kill").value;
+    if (Object.keys(trigger).length > 0) components.trigger = trigger;
+
+    const newEffect = { id, name, emoji, color: "emerald", desc, duration, stackable, components };
+
+    if (STATE.tempOnConfirm) {
+        STATE.tempOnConfirm(newEffect);
+        STATE.tempOnConfirm = null;
+    } else {
+        EFFECT_LIBRARY[id] = newEffect;
+        addLog(`✅ 已更新状态模板：${emoji} ${name}`, "emerald");
+    }
+
+    popEditorState();
+}
+
+/**
+ * 渲染状态绑定列表
+ */
+function renderEffectBindingList(unit) {
+    const isTerrain = STATE.editingUnit.isTerrain;
+    const container = document.createElement("div");
+    container.className = "mt-6 pt-6 border-t border-white/10";
+    container.innerHTML = `
+        <div class="text-xs uppercase text-purple-300 mb-3 flex justify-between font-bold tracking-widest opacity-60">
+            <span>附加状态管理</span>
+            <button onclick="pushEditorState(showAddEffectToUnitForm)" class="text-[10px] px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/60 rounded-lg border border-indigo-500/30">+ 绑定状态</button>
+        </div>
+        <div id="unit-bound-effects" class="space-y-2"></div>
+    `;
+
+    document.getElementById("edit-unit-form").appendChild(container);
+    const list = document.getElementById("unit-bound-effects");
+
+    // 地形使用 effectId, 战斗单位使用 activeEffects
+    const boundEffects = isTerrain ? (unit.effectId ? [{id: unit.effectId, duration: unit.effectDuration}] : []) : (unit.activeEffects || []);
+
+    list.innerHTML = boundEffects.map((eff, idx) => {
+        const t = EFFECT_LIBRARY[eff.id || eff];
+        if (!t) return "";
+        return `
+            <div class="flex items-center gap-3 bg-slate-800/60 p-3 rounded-xl border border-white/5">
+                <span class="text-2xl">${t.emoji}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-xs truncate">${t.name}</div>
+                    <div class="text-[9px] text-slate-500">${t.desc}</div>
+                </div>
+                <div class="flex gap-1">
+                    <button onclick="editBoundEffect(${idx})" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
+                    <button onclick="removeEffectFromUnit(${idx})" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
+                </div>
+            </div>
+        `;
+    }).join("");
+}
+
+function showAddEffectToUnitForm() {
+    STATE.editingSkillId = null;
+    const container = document.getElementById("edit-unit-form");
+    const html = `
+        <div class="bg-slate-900 border border-indigo-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-indigo-400 text-xs font-bold uppercase tracking-widest">选择要绑定的状态</div>
+                <button onclick="pushEditorState(showCreateEffectForm, true)" class="text-[9px] px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">新建状态库条目</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-4 max-h-48 overflow-y-auto custom-scroll">
+                ${Object.keys(EFFECT_LIBRARY).map(id => `
+                    <button onclick="confirmBindEffect('${id}')" class="flex items-center gap-2 p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-left transition-all">
+                        <span>${EFFECT_LIBRARY[id].emoji}</span>
+                        <span class="text-[10px] font-bold truncate">${EFFECT_LIBRARY[id].name}</span>
+                    </button>
+                `).join("")}
+            </div>
+            <button onclick="popEditorState()" class="w-full py-3 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">取消</button>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function confirmBindEffect(effectId) {
+    const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+    if (STATE.editingUnit.isTerrain) {
+        const isTrigger = confirm("是否将其设为「触发型」效果？\n确定：单位踩上去后获得该状态（离开后仍持续数回合）\n取消：单位站在此处时生效（离开后立刻消失）");
+        unit.effectId = effectId;
+        unit.effectIsTrigger = isTrigger;
+        unit.effectDuration = EFFECT_LIBRARY[effectId].duration || 3;
+    } else {
+        if (!unit.activeEffects) unit.activeEffects = [];
+        // 如果已经有了，不重复添加
+        if (!unit.activeEffects.some(e => e.id === effectId)) {
+            unit.activeEffects.push({ id: effectId, stacks: 1, remainingTurns: EFFECT_LIBRARY[effectId].duration });
+        }
+    }
+    addLog(`✅ 已为单位绑定状态：${EFFECT_LIBRARY[effectId].name}`, "indigo");
+    popEditorState();
+}
+
+function editBoundEffect(index) {
+    const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+    const effects = STATE.editingUnit.isTerrain
+        ? (unit.effectConfig ? [unit.effectConfig] : [{ id: unit.effectId }])
+        : unit.activeEffects;
+
+    const targetEffect = effects[index];
+
+    STATE.tempOnConfirm = (newConfig) => {
+        if (STATE.editingUnit.isTerrain) {
+            unit.effectConfig = newConfig;
+            unit.effectId = newConfig.id;
+        } else {
+            unit.activeEffects[index] = { ...newConfig };
+        }
+        addLog(`✅ 已更新状态实例数值`, "amber");
+        renderEditForm(); // 刷新编辑器
+    };
+
+    pushEditorState(showCreateEffectForm, {
+        isInstance: true,
+        baseEffect: targetEffect
+    });
+}
+
+function removeEffectFromUnit(index) {
+    const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+    if (STATE.editingUnit.isTerrain) {
+        unit.effectId = null;
+    } else {
+        unit.activeEffects.splice(index, 1);
+    }
+    renderEditForm();
 }
 
 /**
@@ -1173,7 +2041,7 @@ function renderCurrentNormalSkills() {
                 </div>
                 <div class="flex gap-1">
                     <button onclick="event.stopImmediatePropagation(); previewSkillInEdit('${skillId}');" class="p-2 text-cyan-400 hover:bg-cyan-400/20 rounded-lg transition-colors">👁️</button>
-                    <button onclick="event.stopImmediatePropagation(); editExistingSkill('${skillId}');" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
+                    <button onclick="event.stopImmediatePropagation(); pushEditorState(editExistingSkill, '${skillId}');" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
                     <button onclick="event.stopImmediatePropagation(); deleteSkill('${skillId}');" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
                 </div>
             </div>`;
@@ -1199,7 +2067,7 @@ function editExistingSkill(skillId) {
     if (!skill) return;
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="bg-amber-900/10 border border-amber-400/20 rounded-2xl p-5 mb-6">
+        <div class="bg-slate-900 border border-amber-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="text-amber-400 text-xs font-bold mb-4 uppercase tracking-widest">编辑技能</div>
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
@@ -1214,68 +2082,223 @@ function editExistingSkill(skillId) {
                 <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
                 <div class="flex gap-2">
                     <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all">保存</button>
-                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
+                    <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
                 </div>
             </div>
+            <div id="skill-effect-binding-container"></div>
         </div>`;
-    container.innerHTML = html + container.innerHTML;
+    container.innerHTML = html;
+    renderSkillEffectBinding(skillId);
+}
+
+function renderSkillEffectBinding(skillId) {
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
+    const container = document.createElement("div");
+    container.className = "mt-4 pt-4 border-t border-amber-500/20 space-y-4";
+    container.innerHTML = `
+        <div>
+            <div class="text-[10px] font-bold text-rose-500/60 uppercase mb-2">对目标附加</div>
+            <div id="skill-target-effects" class="space-y-1 mb-2"></div>
+            <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}pushEditorState(showAddEffectToSkillForm, '${skillId}', 'target')" class="w-full py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 text-[10px] font-bold rounded-lg border border-rose-500/30 transition-all">+ 绑定给目标</button>
+        </div>
+        <div>
+            <div class="text-[10px] font-bold text-emerald-500/60 uppercase mb-2">对自己附加</div>
+            <div id="skill-self-effects" class="space-y-1 mb-2"></div>
+            <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}pushEditorState(showAddEffectToSkillForm, '${skillId}', 'self')" class="w-full py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/30 transition-all">+ 绑定给自己</button>
+        </div>
+    `;
+    document.getElementById("skill-effect-binding-container").appendChild(container);
+
+    const targetList = document.getElementById("skill-target-effects");
+    const tEffs = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+    targetList.innerHTML = tEffs.map((eff, idx) => {
+        const t = EFFECT_LIBRARY[eff.id];
+        const config = EFFECT_HANDLERS.getConfig(eff);
+        return t ? `
+            <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
+                <span>${config.emoji} ${config.name} (${config.duration}T)</span>
+                <div class="flex gap-2">
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}editSkillEffect('${skillId}', ${idx}, 'target')" class="text-amber-400">✏️</button>
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}removeEffectFromSkill('${skillId}', ${idx}, 'target')" class="text-rose-400">✕</button>
+                </div>
+            </div>` : "";
+    }).join("");
+
+    const selfList = document.getElementById("skill-self-effects");
+    const sEffs = skill.selfEffects || [];
+    selfList.innerHTML = sEffs.map((eff, idx) => {
+        const t = EFFECT_LIBRARY[eff.id];
+        const config = EFFECT_HANDLERS.getConfig(eff);
+        return t ? `
+            <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
+                <span>${config.emoji} ${config.name} (${config.duration}T)</span>
+                <div class="flex gap-2">
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}editSkillEffect('${skillId}', ${idx}, 'self')" class="text-amber-400">✏️</button>
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}removeEffectFromSkill('${skillId}', ${idx}, 'self')" class="text-rose-400">✕</button>
+                </div>
+            </div>` : "";
+    }).join("");
+}
+
+function showAddEffectToSkillForm(skillId, type) {
+    STATE.editingSkillId = skillId;
+    const container = document.getElementById("edit-unit-form");
+    const html = `
+        <div class="bg-slate-900 border border-amber-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
+            <div class="flex justify-between items-center">
+                <span class="text-amber-300 font-bold uppercase tracking-widest text-sm">选择状态</span>
+                <button onclick="pushEditorState(showCreateEffectForm, true)" class="text-[10px] px-2 py-1 bg-amber-600 text-white rounded-lg">新建状态库条目</button>
+            </div>
+            <select id="new-skill-eff-id-${type}" class="editor-input w-full px-4 py-3 rounded-xl text-xs">
+                ${Object.keys(EFFECT_LIBRARY).map(id => `<option value="${id}">${EFFECT_LIBRARY[id].emoji} ${EFFECT_LIBRARY[id].name}</option>`).join("")}
+            </select>
+            <input id="new-skill-eff-dur-${type}" type="number" value="3" class="editor-input w-full px-4 py-3 rounded-xl text-xs" placeholder="持续回合">
+            <div class="flex gap-2">
+                <button onclick="confirmBindEffectToSkill('${skillId}', '${type}')" class="flex-1 py-3 bg-amber-600 text-white text-xs font-bold rounded-xl">确定</button>
+                <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl">取消</button>
+            </div>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function editSkillEffect(skillId, index, type) {
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
+    if (!skill) return;
+    const effects = (type === 'target') ? (skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [])) : (skill.selfEffects || []);
+    const targetEffect = effects[index];
+
+    STATE.tempOnConfirm = (newConfig) => {
+        if (type === 'target' && !skill.targetEffects && skill.effectId) {
+            skill.targetEffects = [{...newConfig}];
+            skill.effectId = null;
+        } else {
+            effects[index] = { ...newConfig };
+        }
+        addLog(`✅ 已更新技能状态实例数值`, "amber");
+
+        // 返回后自动刷新上一层 UI
+        if (skillId === 'temp') showAddSkillForm(false);
+        else renderSkillEffectBinding(skillId);
+    };
+
+    pushEditorState(showCreateEffectForm, {
+        isInstance: true,
+        baseEffect: targetEffect
+    });
+}
+
+function confirmBindEffectToSkill(skillId, type) {
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
+    const id = document.getElementById(`new-skill-eff-id-${type}`).value;
+    const duration = parseInt(document.getElementById(`new-skill-eff-dur-${type}`).value) || 3;
+
+    if (type === 'target') {
+        if (!skill.targetEffects) skill.targetEffects = skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [];
+        skill.targetEffects.push({id, duration});
+        skill.effectId = null;
+    } else {
+        if (!skill.selfEffects) skill.selfEffects = [];
+        skill.selfEffects.push({id, duration});
+    }
+
+    addLog(`✅ 技能「${skill.name}」已添加状态`, "amber");
+    popEditorState();
+}
+
+function removeEffectFromSkill(skillId, index, type) {
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
+    if (type === 'target') {
+        if (skill.targetEffects) skill.targetEffects.splice(index, 1);
+        else if (skill.effectId) skill.effectId = null;
+    } else {
+        if (skill.selfEffects) skill.selfEffects.splice(index, 1);
+    }
+
+    if (skillId === 'temp') showAddSkillForm(false);
+    else renderSkillEffectBinding(skillId);
 }
 
 function confirmEditSkill(skillId) {
     const skill = GAME_CONFIG.SKILLS[skillId];
-    skill.emoji = document.getElementById("new-skill-emoji").value || skill.emoji;
-    skill.name = document.getElementById("new-skill-name").value || skill.name;
-    skill.manaCost = parseInt(document.getElementById("new-skill-cost").value) || skill.manaCost;
-    skill.range = parseInt(document.getElementById("new-skill-range").value) || skill.range;
-    skill.damage = parseInt(document.getElementById("new-skill-dmg").value) || skill.damage;
-    skill.desc = document.getElementById("new-skill-desc").value || skill.desc;
+    skill.emoji = document.getElementById("new-skill-emoji").value;
+    skill.name = document.getElementById("new-skill-name").value;
+    skill.manaCost = parseInt(document.getElementById("new-skill-cost").value);
+    skill.range = parseInt(document.getElementById("new-skill-range").value);
+    skill.damage = parseInt(document.getElementById("new-skill-dmg").value);
+    skill.desc = document.getElementById("new-skill-desc").value;
 
     addLog(`✅ 技能「${skill.name}」已更新`, "amber");
-    renderEditForm();
+    popEditorState();
 }
 
-function showAddSkillForm() {
+function showAddSkillForm(isInit = true) {
+    if (isInit && !STATE.tempNewSkill) {
+        STATE.tempNewSkill = {
+            emoji: "✨",
+            name: "新技能",
+            manaCost: 4,
+            range: 2,
+            damage: 12,
+            desc: "",
+            targetEffects: [],
+            selfEffects: []
+        };
+    }
+
+    const s = STATE.tempNewSkill;
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="bg-purple-900/10 border border-purple-400/20 rounded-2xl p-5 mb-6">
+        <div class="bg-slate-900 border border-purple-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="text-purple-400 text-xs font-bold mb-4 uppercase tracking-widest">新增独立技能</div>
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">图标</label><input id="new-skill-emoji" placeholder="✨" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl"></div>
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">名称</label><input id="new-skill-name" placeholder="技能名" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">图标</label><input id="new-skill-emoji" value="${s.emoji}" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">名称</label><input id="new-skill-name" value="${s.name}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝耗</label><input id="new-skill-cost" type="number" value="4" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">范围</label><input id="new-skill-range" type="number" value="2" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">伤害</label><input id="new-skill-dmg" type="number" value="12" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝耗</label><input id="new-skill-cost" type="number" value="${s.manaCost}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">范围</label><input id="new-skill-range" type="number" value="${s.range}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${s.damage}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
                 </div>
-                <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" placeholder="简短描述该技能的效果" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+                <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" value="${s.desc}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+
+                <div id="skill-effect-binding-container"></div>
+
                 <div class="flex gap-2">
                     <button onclick="confirmAddSkill()" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-all">确认新增</button>
-                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
+                    <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
                 </div>
             </div>
         </div>`;
-    container.innerHTML = html + container.innerHTML;
+    container.innerHTML = html;
+    renderSkillEffectBinding('temp');
+}
+
+function syncTempSkill() {
+    const s = STATE.tempNewSkill;
+    s.emoji = document.getElementById("new-skill-emoji").value;
+    s.name = document.getElementById("new-skill-name").value;
+    s.manaCost = parseInt(document.getElementById("new-skill-cost").value);
+    s.range = parseInt(document.getElementById("new-skill-range").value);
+    s.damage = parseInt(document.getElementById("new-skill-dmg").value);
+    s.desc = document.getElementById("new-skill-desc").value;
 }
 
 function confirmAddSkill() {
-    const emoji = document.getElementById("new-skill-emoji").value || "✨";
-    const name = document.getElementById("new-skill-name").value || "新技能";
-    const manaCost = parseInt(document.getElementById("new-skill-cost").value) || 4;
-    const range = parseInt(document.getElementById("new-skill-range").value) || 2;
-    const damage = parseInt(document.getElementById("new-skill-dmg").value) || 12;
-    const desc = document.getElementById("new-skill-desc").value || "";
+    syncTempSkill();
+    const s = STATE.tempNewSkill;
+    const { emoji, name, manaCost, range, damage, desc, targetEffects, selfEffects } = s;
 
     const skillId = "custom_" + Date.now();
-    GAME_CONFIG.SKILLS[skillId] = { emoji, name, manaCost, range, damage, desc };
+    GAME_CONFIG.SKILLS[skillId] = { emoji, name, manaCost, range, damage, desc, targetEffects, selfEffects };
 
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (!unit.normalSkills) unit.normalSkills = [];
     unit.normalSkills.push(skillId);
 
     addLog(`✅ 新技能已独立添加到单位：${emoji} ${name}`, "purple");
-    renderEditForm();
+    popEditorState();
 }
 
 function saveCurrentEdit() {
@@ -1400,12 +2423,25 @@ function updateSelectedPanel() {
     document.getElementById("selected-emoji").innerHTML = entity.emoji;
     document.getElementById("selected-name").textContent = entity.name;
 
+    const effectsContainer = document.getElementById("active-effects-list");
+    effectsContainer.innerHTML = "";
+
     if (isTerrain) {
         document.getElementById("selected-team").innerHTML = `<span class="bg-slate-500/30 text-slate-300 border border-slate-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">地形</span>`;
         document.getElementById("unit-stats").classList.add("hidden");
         document.getElementById("skill-selection").classList.add("hidden");
         document.getElementById("terrain-desc").classList.remove("hidden");
         document.getElementById("terrain-desc-text").innerHTML = entity.desc || "无特殊描述";
+
+        // 地形特有状态 (它赋予的状态)
+        if (entity.effectId) {
+            const config = EFFECT_HANDLERS.getConfig(entity.effectConfig || { id: entity.effectId });
+            const div = document.createElement("div");
+            div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 cursor-pointer hover:brightness-125 transition-all`;
+            div.innerHTML = `<span class="opacity-60 text-[8px] border border-indigo-500/50 px-1 rounded">${entity.effectIsTrigger ? '触发' : '固有'}</span> ${config.emoji} ${config.name}`;
+            div.onclick = (e) => showStatusDetail(e, entity.effectConfig || { id: entity.effectId }, true);
+            effectsContainer.appendChild(div);
+        }
     } else {
         document.getElementById("selected-team").innerHTML = isFriendly
             ? `<span class="bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">友方单位</span>`
@@ -1419,47 +2455,75 @@ function updateSelectedPanel() {
         hpFill.className = `hp-fill ${isFriendly ? "bg-gradient-to-r from-emerald-600 to-emerald-400" : "bg-gradient-to-r from-rose-600 to-rose-400"}`;
         document.getElementById("selected-hp-text").innerHTML = `${entity.hp} <span class="opacity-40">/</span> ${entity.maxHp}`;
 
-        const atkBonus = EFFECT_HANDLERS.getEffectiveStat(entity,'atk');
-        document.getElementById("selected-atk").innerHTML = `
+        const atkMod = EFFECT_HANDLERS.getStatModifier(entity,'atk');
+        const atkEl = document.getElementById("selected-atk");
+        atkEl.innerHTML = `
             ${getEffectiveAtk(entity)}
-            ${atkBonus !== 0 ? `<span class="text-xs ${atkBonus > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">(${atkBonus > 0 ? '+' : ''}${atkBonus})</span>` : ''}`;
+            ${atkMod.total !== 0 ? `<span class="text-xs ${atkMod.total > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${atkMod.total > 0 ? '+' : ''}${atkMod.total})</span>` : ''}`;
+        atkEl.onclick = (e) => showStatDetail(e, entity, "atk", "攻击力");
 
-        const defBonus = EFFECT_HANDLERS.getEffectiveStat(entity,'def');
-        document.getElementById("selected-def").innerHTML = `
+        const defMod = EFFECT_HANDLERS.getStatModifier(entity,'def');
+        const defEl = document.getElementById("selected-def");
+        defEl.innerHTML = `
             ${getEffectiveDef(entity)}
-            ${defBonus !== 0 ? `<span class="text-xs ${defBonus > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">(${defBonus > 0 ? '+' : ''}${defBonus})</span>` : ''}`;
+            ${defMod.total !== 0 ? `<span class="text-xs ${defMod.total > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${defMod.total > 0 ? '+' : ''}${defMod.total})</span>` : ''}`;
+        defEl.onclick = (e) => showStatDetail(e, entity, "def", "防御力");
 
         const effMove = getEffectiveMoveRange(entity);
-        document.getElementById("selected-remaining-move").innerHTML = `
-            <span class="text-emerald-400">${effMove}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.moveRange}</span>`;
+        const moveMod = EFFECT_HANDLERS.getStatModifier(entity,'move').total;
+        const moveEl = document.getElementById("selected-remaining-move");
+        moveEl.innerHTML = `
+            <span class="text-emerald-400">${effMove}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.moveRange}</span>
+            ${moveMod !== 0 ? `<span class="text-[10px] ${moveMod > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold ml-1 cursor-pointer underline decoration-dotted">${moveMod > 0 ? '+' : ''}${moveMod}</span>` : ''}`;
+        moveEl.onclick = (e) => showStatDetail(e, entity, "move", "移动范围");
 
         const effRange = getEffectiveAtkRange(entity);
-        document.getElementById("selected-range").innerHTML = `
+        const rangeMod = EFFECT_HANDLERS.getStatModifier(entity,'range').total;
+        const rangeEl = document.getElementById("selected-range");
+        rangeEl.innerHTML = `
             <span class="text-rose-400">${effRange}</span>
-            ${effRange !== entity.atkRange ? `<span class="text-xs text-cyan-400 font-bold">(${effRange > entity.atkRange ? '+' : ''}${effRange - entity.atkRange})</span>` : ''}`;
+            ${rangeMod !== 0 ? `<span class="text-xs ${rangeMod > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${rangeMod > 0 ? '+' : ''}${rangeMod})</span>` : ''}`;
+        rangeEl.onclick = (e) => showStatDetail(e, entity, "range", "攻击范围");
 
         document.getElementById("selected-mana").innerHTML = `
             <span class="text-cyan-400">${entity.currentMana}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.maxMana}</span>`;
 
         const skillDiv = document.getElementById("skill-selection");
+    }
+
+    // 统一处理光环和活动效果 (战斗单位和地形都可能被影响)
+    const auras = EFFECT_HANDLERS.calculateAurasForUnit(entity);
+    const hasEffects = (entity.activeEffects && entity.activeEffects.length > 0) || auras.length > 0 || (isTerrain && entity.effectId);
+
+    if (hasEffects) {
+        // 普通状态
+        entity.activeEffects?.forEach(eff => {
+            const config = EFFECT_HANDLERS.getConfig(eff);
+            const div = document.createElement("div");
+            div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${config.color}-500/20 text-${config.color}-300 border border-${config.color}-500/30 cursor-pointer hover:brightness-125 transition-all`;
+            div.innerHTML = `${config.emoji} ${config.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
+            div.onclick = (e) => showStatusDetail(e, eff);
+            effectsContainer.appendChild(div);
+        });
+        // 光环状态
+        auras.forEach(aura => {
+            // 如果地形选中了自己，且显示了固有状态，则跳过重复的光环显示
+            if (isTerrain && aura.id === entity.effectId) return;
+
+            const div = document.createElement("div");
+            div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 cursor-pointer hover:brightness-125 transition-all`;
+            div.innerHTML = `${aura.icon} ${aura.sourceName} 的光环`;
+            div.onclick = (e) => showStatusDetail(e, aura, true);
+            effectsContainer.appendChild(div);
+        });
+    } else {
+        effectsContainer.innerHTML = `<span class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">无活动效果</span>`;
+    }
+
+    if (!isTerrain) {
+        const skillDiv = document.getElementById("skill-selection");
         const skillsList = document.getElementById("skills-list");
         const titleEl = document.getElementById("skill-title");
-
-        const effectsContainer = document.getElementById("active-effects-list");
-        effectsContainer.innerHTML = "";
-
-        if (entity.activeEffects && entity.activeEffects.length > 0) {
-            entity.activeEffects.forEach(eff => {
-                const template = EFFECT_LIBRARY[eff.id];
-                if (!template) return;
-                const div = document.createElement("div");
-                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${template.color}-500/20 text-${template.color}-300 border border-${template.color}-500/30`;
-                div.innerHTML = `${template.emoji} ${template.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
-                effectsContainer.appendChild(div);
-            });
-        } else {
-            effectsContainer.innerHTML = `<span class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">无活动效果</span>`;
-        }
 
         skillDiv.classList.remove("hidden");
         skillsList.innerHTML = "";
@@ -1476,6 +2540,31 @@ function updateSelectedPanel() {
             const canUse = entity.currentMana >= skill.manaCost;
             const btn = document.createElement("button");
             btn.className = `flex items-center gap-4 px-5 py-4 rounded-2xl text-left w-full transition-all active:scale-[0.98] ${isFriendly && canUse ? "bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-100" : "bg-slate-800/40 hover:bg-slate-800/60 border border-white/5 text-slate-300"}`;
+
+            // 自动生成带标签的描述
+            let extraDesc = "";
+            const tEffs = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+            const sEffs = skill.selfEffects || [];
+
+            if (tEffs.length > 0) {
+                extraDesc += `<div class="mt-2 flex flex-wrap gap-1">
+                    <span class="text-[8px] bg-rose-500/20 text-rose-300 px-1 rounded">对目标:</span>
+            ${tEffs.map((e, idx) => {
+                const config = EFFECT_HANDLERS.getConfig(e);
+                return `<span class="status-tag" data-skill-id="${skillId}" data-eff-idx="${idx}" data-eff-type="target">${config.emoji} ${config.name}</span>`;
+            }).join("")}
+                </div>`;
+            }
+            if (sEffs.length > 0) {
+                extraDesc += `<div class="mt-1 flex flex-wrap gap-1">
+                    <span class="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 rounded">对自己:</span>
+            ${sEffs.map((e, idx) => {
+                const config = EFFECT_HANDLERS.getConfig(e);
+                return `<span class="status-tag" data-skill-id="${skillId}" data-eff-idx="${idx}" data-eff-type="self">${config.emoji} ${config.name}</span>`;
+            }).join("")}
+                </div>`;
+            }
+
             btn.innerHTML = `
                 <span class="text-4xl filter drop-shadow-lg">${skill.emoji}</span>
                 <div class="flex-1">
@@ -1484,9 +2573,25 @@ function updateSelectedPanel() {
                         <span class="font-mono text-xs text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded">${skill.manaCost} MP</span>
                     </div>
                     <div class="text-[10px] text-slate-400 mt-1 leading-tight">${skill.desc}</div>
+                    ${extraDesc}
                     <div class="text-[10px] font-bold text-rose-400/70 mt-1 uppercase tracking-tighter">威力 ${skill.damage} • 射程 ${skill.range}</div>
                 </div>
             `;
+
+            // 为标签绑定点击事件
+            btn.querySelectorAll(".status-tag").forEach(tag => {
+                tag.onclick = (e) => {
+                    e.stopPropagation();
+            const sid = tag.dataset.skillId;
+            const idx = parseInt(tag.dataset.effIdx);
+            const type = tag.dataset.effType;
+            const skill = GAME_CONFIG.SKILLS[sid];
+            const effs = type === 'target' ? (skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [])) : (skill.selfEffects || []);
+            const effect = effs[idx];
+            showStatusDetail(e, effect);
+                };
+            });
+
             btn.onclick = () => {
                 if (isFriendly && canUse && STATE.currentTurn === "player") {
                     activateSkill(skillId);
@@ -1544,12 +2649,156 @@ function updateUI() {
     endBtn.style.filter = STATE.currentTurn === "player" ? "" : "grayscale(1)";
 }
 
+/**
+ * ====================== Tooltip 气泡系统 ======================
+ */
+const TooltipManager = {
+    timer: null,
+    activeAnchor: null,
+
+    show(anchor, contentHtml) {
+        this.activeAnchor = anchor;
+        const tooltip = document.getElementById("tooltip");
+        tooltip.innerHTML = contentHtml;
+        tooltip.classList.remove("hidden");
+        tooltip.style.pointerEvents = "auto";
+
+        // 强制重绘
+        tooltip.offsetHeight;
+
+        const rect = anchor.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+
+        // 计算位置：默认在上方居中
+        let top = rect.top - tooltipRect.height - 10;
+        let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+
+        // 边界检查
+        if (top < 10) { // 如果上方空间不足，显示在下方
+            top = rect.bottom + 10;
+            tooltip.style.transformOrigin = "top";
+        } else {
+            tooltip.style.transformOrigin = "bottom";
+        }
+
+        left = Math.max(10, Math.min(window.innerWidth - tooltipRect.width - 10, left));
+
+        tooltip.style.top = `${top}px`;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.opacity = "1";
+        tooltip.style.transform = "scale(1)";
+
+        // 点击外部关闭
+        const closeHandler = (e) => {
+            if (!tooltip.contains(e.target) && !anchor.contains(e.target)) {
+                this.hide();
+                document.removeEventListener("click", closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener("click", closeHandler), 10);
+    },
+
+    hide() {
+        const tooltip = document.getElementById("tooltip");
+        tooltip.style.opacity = "0";
+        tooltip.style.transform = "scale(0.95)";
+        tooltip.style.pointerEvents = "none";
+        setTimeout(() => {
+            if (tooltip.style.opacity === "0") tooltip.classList.add("hidden");
+        }, 200);
+        this.activeAnchor = null;
+    }
+};
+
+function showStatDetail(event, unit, statName, statLabel) {
+    const modData = EFFECT_HANDLERS.getStatModifier(unit, statName);
+    const baseValue = (statName === "atk") ? unit.atk :
+                     (statName === "def") ? unit.def :
+                     (statName === "move") ? unit.moveRange : unit.atkRange;
+
+    let content = `
+        <div class="space-y-3 min-w-[200px]">
+            <div class="flex justify-between items-center border-b border-white/10 pb-2">
+                <span class="text-slate-400 font-bold text-[10px] uppercase tracking-widest">${statLabel}</span>
+                <span class="text-lg font-black text-white">${baseValue + modData.total}</span>
+            </div>
+            <div class="space-y-1.5">
+                <div class="flex justify-between text-[11px]">
+                    <span class="text-slate-500">基础数值</span>
+                    <span class="font-mono text-slate-300">${baseValue}</span>
+                </div>`;
+
+    modData.sources.forEach(src => {
+        const isPos = src.value > 0;
+        content += `
+            <div class="flex justify-between text-[11px]">
+                <span class="text-slate-300 flex items-center gap-1"><span>${src.icon}</span> ${src.name}</span>
+                <span class="font-mono font-bold ${isPos ? 'text-emerald-400' : 'text-rose-400'}">${isPos ? '+' : ''}${src.value}</span>
+            </div>`;
+    });
+
+    content += `</div></div>`;
+    TooltipManager.show(event.currentTarget, content);
+}
+
+function showStatusDetail(event, eff, isAura = false) {
+    const config = EFFECT_HANDLERS.getConfig(eff);
+    const comps = config.components;
+
+    let extraTags = "";
+    if (comps.condition) {
+        const c = comps.condition;
+        extraTags += `<div class="text-[8px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">条件: ${c.stat.toUpperCase()} ${c.operator} ${c.value}${c.percent ? '%' : ''}</div>`;
+    }
+    if (comps.trigger) {
+        if (comps.trigger.onMove) extraTags += `<div class="text-[8px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">触发: 移动时</div>`;
+        if (comps.trigger.onKill) extraTags += `<div class="text-[8px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">触发: 击杀时</div>`;
+    }
+
+    let content = `
+        <div class="space-y-3">
+            <div class="flex items-center gap-2 border-b border-white/10 pb-2">
+                <span class="text-2xl">${config.emoji}</span>
+                <div>
+                    <div class="font-bold text-sm text-${config.color}-400">${config.name}</div>
+                    <div class="text-[9px] text-slate-500 uppercase tracking-widest">
+                        ${isAura ? `光环来自: ${eff.sourceName}` : `持续: ${eff.remainingTurns} 回合`}
+                    </div>
+                </div>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-relaxed">${config.desc}</p>
+            ${extraTags ? `<div class="flex flex-wrap gap-1 mt-2">${extraTags}</div>` : ""}
+            ${eff.stacks > 1 ? `<div class="text-[10px] text-amber-400 font-bold">当前叠加: ${eff.stacks} 层</div>` : ''}
+        </div>`;
+
+    TooltipManager.show(event.currentTarget, content);
+}
+
+function showGenericModal(title, htmlContent) {
+    const modal = document.getElementById("result-modal");
+    modal.classList.remove("hidden");
+    document.getElementById("result-icon").innerHTML = "";
+    document.getElementById("result-title").innerHTML = title;
+    document.getElementById("result-text").innerHTML = htmlContent;
+
+    // 使用独立按钮逻辑，避免污染胜负结算弹窗
+    const btn = modal.querySelector("button");
+    btn.textContent = "确定";
+    btn.onclick = () => hideModal();
+}
+
 function showResult(isWin) {
     const modal = document.getElementById("result-modal");
     modal.classList.remove("hidden");
     const iconEl = document.getElementById("result-icon");
     const titleEl = document.getElementById("result-title");
     const textEl = document.getElementById("result-text");
+
+    // 恢复按钮默认逻辑
+    const btn = modal.querySelector("button");
+    btn.textContent = "再来一局";
+    btn.onclick = () => { hideModal(); resetGame(); };
+
     if (isWin) {
         iconEl.textContent = "🏆";
         titleEl.innerHTML = `<span class="text-emerald-400">胜利！</span>`;
@@ -1566,6 +2815,7 @@ function exportBoard() {
     const exportData = {
         unitTypes: GAME_CONFIG.UNIT_TYPES,
         skills: GAME_CONFIG.SKILLS,
+        effects: EFFECT_LIBRARY,
         friendlyUnits: STATE.friendlyUnits,
         enemyUnits: STATE.enemyUnits,
         terrainUnits: STATE.terrainUnits,
@@ -1596,6 +2846,7 @@ function handleImport(e) {
             const imported = jsyaml.load(ev.target.result);
             if (imported.unitTypes) Object.assign(GAME_CONFIG.UNIT_TYPES, imported.unitTypes);
             if (imported.skills) Object.assign(GAME_CONFIG.SKILLS, imported.skills);
+            if (imported.effects) Object.assign(EFFECT_LIBRARY, imported.effects);
 
             STATE.friendlyUnits = (imported.friendlyUnits || []).map(u => ({ ...u }));
             STATE.enemyUnits = (imported.enemyUnits || []).map(u => ({ ...u }));
@@ -1671,9 +2922,14 @@ function enemyTurn() {
         }
 
         const fromRow = enemy.row, fromCol = enemy.col;
+        const dist = Math.abs(fromRow - bestR) + Math.abs(fromCol - bestC);
         enemy.row = bestR; enemy.col = bestC;
         addLog(`<span class="text-rose-400">${enemy.emoji} ${enemy.name}</span> 移动到 (${bestR},${bestC})`, "rose");
         AnimationManager.animateMove(fromRow, fromCol, bestR, bestC, enemy.emoji);
+
+        // 触发敌方移动事件
+        EFFECT_HANDLERS.trigger(enemy, "onMove", { fromRow, fromCol, toRow: bestR, toCol: bestC, dist });
+
         applyTerrainEffect(enemy);
         renderBoard();
 
