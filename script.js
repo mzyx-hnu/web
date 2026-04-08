@@ -186,20 +186,34 @@ const COMPONENT_PROCESSORS = {
         return params[action] || false;
     },
     trigger: (unit, eff, params, event, data) => {
+        const stacks = eff.stacks || 1;
         const handlers = {
             thornsEffect: (u, d) => {
                 if (d.attacker && d.range === 1) {
-                    d.attacker.hp = Math.max(0, d.attacker.hp - 4);
-                    addLog(`🌵 荆棘反伤！对 ${d.attacker.emoji} 造成 4 点伤害`, "lime");
-                    AnimationManager.showDamagePopup(4, d.attacker.row, d.attacker.col);
+                    const dmg = 4 * stacks;
+                    d.attacker.hp = Math.max(0, d.attacker.hp - dmg);
+                    addLog(`🌵 荆棘反伤！对 ${d.attacker.emoji} 造成 ${dmg} 点伤害`, "lime");
+                    AnimationManager.showDamagePopup(dmg, d.attacker.row, d.attacker.col);
                 }
             },
             lifestealEffect: (u, d) => {
                 if (d.damageDealt > 0) {
-                    const heal = Math.floor(d.damageDealt * 0.5);
+                    const heal = Math.floor(d.damageDealt * 0.5 * stacks);
                     u.hp = Math.min(u.maxHp, u.hp + heal);
                     addLog(`🧛 吸血！回复 ${heal} 点生命`, "rose");
                 }
+            },
+            // 新增内置通用触发逻辑
+            onKillHeal: (u, d) => {
+                const heal = 8 * stacks;
+                u.hp = Math.min(u.maxHp, u.hp + heal);
+                addLog(`💀 击杀奖励！${u.emoji} 回复 ${heal} 点生命`, "emerald");
+            },
+            onMoveDmg: (u, d) => {
+                const dmg = 2 * stacks;
+                u.hp = Math.max(0, u.hp - dmg);
+                addLog(`🩹 移动受创！${u.emoji} 受到 ${dmg} 点伤害`, "rose");
+                AnimationManager.showDamagePopup(dmg, u.row, u.col);
             }
         };
         const funcName = params[event];
@@ -225,9 +239,32 @@ const EFFECT_HANDLERS = {
         };
     },
 
+    /**
+     * 检查组件条件是否满足
+     */
+    checkCondition(unit, condition) {
+        if (!condition) return true;
+        const { stat, operator, value, percent } = condition;
+
+        let currentVal;
+        if (stat === "hp") currentVal = percent ? (unit.hp / unit.maxHp) * 100 : unit.hp;
+        else if (stat === "mana") currentVal = percent ? (unit.currentMana / unit.maxMana) * 100 : unit.currentMana;
+        else currentVal = unit[stat];
+
+        switch (operator) {
+            case ">": return currentVal > value;
+            case "<": return currentVal < value;
+            case ">=": return currentVal >= value;
+            case "<=": return currentVal <= value;
+            case "==": return currentVal == value;
+            default: return true;
+        }
+    },
+
     tick(unit, eff) {
         const config = this.getConfig(eff);
         if (config.components.tick) {
+            if (!this.checkCondition(unit, config.components.tick.condition)) return;
             COMPONENT_PROCESSORS.tick(unit, eff, config.components.tick);
         }
     },
@@ -244,6 +281,7 @@ const EFFECT_HANDLERS = {
             unit.activeEffects.forEach(eff => {
                 const config = this.getConfig(eff);
                 if (config.components.stats) {
+                    if (!this.checkCondition(unit, config.components.stats.condition)) return;
                     const mod = COMPONENT_PROCESSORS.stats(unit, eff, config.components.stats, stat);
                     if (mod !== 0) {
                         total += mod;
@@ -269,7 +307,9 @@ const EFFECT_HANDLERS = {
         // 状态限制
         const fromEffects = (unit.activeEffects || []).some(eff => {
             const config = this.getConfig(eff);
-            return config.components.inhibit && COMPONENT_PROCESSORS.inhibit(unit, eff, config.components.inhibit, action);
+            if (!config.components.inhibit) return false;
+            if (!this.checkCondition(unit, config.components.inhibit.condition)) return false;
+            return COMPONENT_PROCESSORS.inhibit(unit, eff, config.components.inhibit, action);
         });
         if (fromEffects) return true;
 
@@ -392,14 +432,50 @@ function applyEffect(unit, effectData, customDuration = null) {
         if (config.stackable) {
             existing.stacks = (existing.stacks || 1) + 1;
             addLog(`${unit.emoji} ${unit.name} 的 ${config.name} 叠加至 <span class="font-bold">${existing.stacks}</span> 层`, config.color);
+            existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : config.duration);
+        } else {
+            // 不可叠加，检查数值是否更高
+            if (compareEffectStrength(existing, effectInstance)) {
+                const idx = unit.activeEffects.indexOf(existing);
+                effectInstance.stacks = 1;
+                effectInstance.remainingTurns = customDuration !== null ? customDuration : config.duration;
+                unit.activeEffects[idx] = effectInstance;
+                addLog(`${unit.emoji} ${unit.name} 的 ${config.name} 被更强力的效果覆盖`, config.color);
+            } else {
+                existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : config.duration);
+                addLog(`${unit.emoji} ${unit.name} 获得了重复的 ${config.name}，仅刷新持续时间`, "slate");
+            }
         }
-        existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : config.duration);
     } else {
         effectInstance.stacks = 1;
         effectInstance.remainingTurns = customDuration !== null ? customDuration : config.duration;
         unit.activeEffects.push(effectInstance);
         addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${config.color}-400">${config.emoji} ${config.name}</span>`, config.color);
     }
+}
+
+/**
+ * 比较两个效果实例的“强度”
+ */
+function compareEffectStrength(oldEff, newEff) {
+    const cOld = EFFECT_HANDLERS.getConfig(oldEff).components;
+    const cNew = EFFECT_HANDLERS.getConfig(newEff).components;
+
+    const getPower = (comps) => {
+        let p = 0;
+        if (comps.stats) {
+            Object.values(comps.stats).forEach(v => {
+                if (typeof v === 'number') p += Math.abs(v);
+            });
+        }
+        if (comps.tick) {
+            if (comps.tick.damage) p += comps.tick.damage;
+            if (comps.tick.heal) p += comps.tick.heal;
+        }
+        return p;
+    };
+
+    return getPower(cNew) > getPower(cOld);
 }
 
 function tickAllEffects() {
@@ -1070,6 +1146,10 @@ function attemptPlayerMove(unit, targetRow, targetCol) {
     unit.remainingMove -= dist;
     addLog(`移动 <span class="font-mono">${dist}</span> 格（剩余 <span class="font-mono">${unit.remainingMove}</span>）`, "emerald");
     AnimationManager.animateMove(fromRow, fromCol, targetRow, targetCol, unit.emoji);
+
+    // 触发移动事件
+    EFFECT_HANDLERS.trigger(unit, "onMove", { fromRow, fromCol, toRow: targetRow, toCol: targetCol, dist });
+
     applyTerrainEffect(unit);
     return true;
 }
@@ -1095,6 +1175,9 @@ function performAttack(attacker, defender) {
     // 触发事件
     EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range });
     EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range });
+    if (defender.hp <= 0) {
+        EFFECT_HANDLERS.trigger(attacker, "onKill", { target: defender });
+    }
 
     AnimationManager.showDamagePopup(damage, defender.row, defender.col);
     if (attacker.atkRange === 1) {
@@ -1122,6 +1205,9 @@ function performSkill(attacker, skillId, defender) {
         // 触发攻击/防御事件
         EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range, isSkill: true });
         EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range, isSkill: true });
+        if (defender.hp <= 0) {
+            EFFECT_HANDLERS.trigger(attacker, "onKill", { target: defender });
+        }
     } else {
         addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 已发动`, "cyan");
     }
@@ -1544,16 +1630,16 @@ function showCreateEffectForm(options = {}) {
     const {
         fromBinding = false,
         isInstance = false,
-        baseEffect = null,
-        onConfirm = null
+        baseEffect = null
     } = options;
 
     const container = document.getElementById("edit-unit-form");
-    const config = baseEffect ? EFFECT_HANDLERS.getConfig(baseEffect) : { components: {} };
+    const effectToEdit = baseEffect || {};
+    const config = EFFECT_HANDLERS.getConfig(effectToEdit);
 
     container.innerHTML = `
-        <div class="bg-slate-900 border border-emerald-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
-            <div class="text-emerald-400 font-black text-xl uppercase">${isInstance ? '编辑当前状态实例' : (fromBinding ? '创建并绑定状态' : '定义新状态')}</div>
+        <div class="bg-slate-900 border border-emerald-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl overflow-y-auto max-h-[85vh] custom-scroll">
+            <div class="text-emerald-400 font-black text-xl uppercase">${isInstance ? '编辑状态实例数值' : (fromBinding ? '绑定并定义新状态' : '定义全局状态模板')}</div>
 
             <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -1567,8 +1653,8 @@ function showCreateEffectForm(options = {}) {
             </div>
 
             <div class="${isInstance ? 'hidden' : ''}">
-                <label class="block text-[10px] font-bold text-slate-500 mb-1">状态 ID (唯一英文字符)</label>
-                <input id="new-eff-id" value="${config.id || ''}" placeholder="atk_buff_2" class="editor-input w-full px-4 py-2 rounded-xl font-mono text-xs">
+                <label class="block text-[10px] font-bold text-slate-500 mb-1">状态 ID (引用库ID或新ID)</label>
+                <input id="new-eff-id" value="${effectToEdit.id || config.id || ''}" placeholder="atk_buff_2" class="editor-input w-full px-4 py-2 rounded-xl font-mono text-xs">
             </div>
 
             <div>
@@ -1637,28 +1723,73 @@ function showCreateEffectForm(options = {}) {
                     <div class="text-[9px] text-slate-500 italic">光环生效时会应用上述属性修正/行为限制</div>
                 </div>
 
+                <!-- 激活条件 (新增) -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-blue-500/20 space-y-3">
+                    <div class="text-[10px] font-bold text-blue-400 uppercase">激活条件 (仅当满足时生效)</div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <select id="comp-cond-stat" class="editor-input px-2 py-2 rounded-lg text-[10px]">
+                            <option value="">无条件</option>
+                            <option value="hp" ${config.components.condition?.stat === 'hp' ? 'selected' : ''}>HP</option>
+                            <option value="mana" ${config.components.condition?.stat === 'mana' ? 'selected' : ''}>MP</option>
+                            <option value="atk" ${config.components.condition?.stat === 'atk' ? 'selected' : ''}>ATK</option>
+                        </select>
+                        <select id="comp-cond-op" class="editor-input px-2 py-2 rounded-lg text-[10px]">
+                            <option value="<" ${config.components.condition?.operator === '<' ? 'selected' : ''}>&lt;</option>
+                            <option value=">" ${config.components.condition?.operator === '>' ? 'selected' : ''}>&gt;</option>
+                            <option value="<=" ${config.components.condition?.operator === '<=' ? 'selected' : ''}>&le;</option>
+                            <option value=">=" ${config.components.condition?.operator === '>=' ? 'selected' : ''}>&ge;</option>
+                            <option value="==" ${config.components.condition?.operator === '==' ? 'selected' : ''}>==</option>
+                        </select>
+                        <input id="comp-cond-val" type="number" value="${config.components.condition?.value || ''}" placeholder="数值" class="editor-input px-2 py-2 rounded-lg text-[10px]">
+                    </div>
+                    <label class="flex items-center gap-2 text-[9px] text-slate-400">
+                        <input id="comp-cond-pct" type="checkbox" ${config.components.condition?.percent ? 'checked' : ''} class="accent-blue-500"> 按百分比计算 (仅HP/MP)
+                    </label>
+                </div>
+
+                <!-- 触发器配置 (新增) -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-amber-500/20 space-y-3">
+                    <div class="text-[10px] font-bold text-amber-400 uppercase">触发器 (事件发生时执行)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="space-y-1">
+                            <label class="text-[8px] text-slate-500">移动时 (onMove)</label>
+                            <select id="comp-trig-move" class="editor-input w-full px-2 py-2 rounded-lg text-[10px]">
+                                <option value="">无</option>
+                                <option value="onMoveDmg" ${config.components.trigger?.onMove === 'onMoveDmg' ? 'selected' : ''}>移动受创</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[8px] text-slate-500">击杀时 (onKill)</label>
+                            <select id="comp-trig-kill" class="editor-input w-full px-2 py-2 rounded-lg text-[10px]">
+                                <option value="">无</option>
+                                <option value="onKillHeal" ${config.components.trigger?.onKill === 'onKillHeal' ? 'selected' : ''}>击杀回血</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 时长 -->
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1">默认持续时间</label>
-                        <input id="new-eff-dur" type="number" value="3" class="editor-input w-full px-4 py-2 rounded-xl text-center">
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1">${isInstance ? '持续回合' : '默认持续时间'}</label>
+                        <input id="new-eff-dur" type="number" value="${config.duration !== undefined ? config.duration : 3}" class="editor-input w-full px-4 py-2 rounded-xl text-center">
                     </div>
                     <div class="flex items-center gap-2 pt-4">
-                        <input id="new-eff-stack" type="checkbox" checked class="w-5 h-5 accent-emerald-500">
+                        <input id="new-eff-stack" type="checkbox" ${config.stackable !== false ? 'checked' : ''} class="w-5 h-5 accent-emerald-500">
                         <label class="text-xs font-bold text-slate-300">支持数值叠加</label>
                     </div>
                 </div>
             </div>
 
             <div class="flex gap-2">
-                <button onclick="confirmCreateEffect(${fromBinding})" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">确认</button>
+                <button onclick="confirmCreateEffect()" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">确认</button>
                 <button onclick="popEditorState()" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
             </div>
         </div>
     `;
 }
 
-function confirmCreateEffect(returnToBinding = false) {
+function confirmCreateEffect() {
     const id = document.getElementById("new-eff-id").value || ("eff_" + Date.now());
     const name = document.getElementById("new-eff-name").value || "新状态";
     const emoji = document.getElementById("new-eff-emoji").value || "✨";
@@ -1668,57 +1799,67 @@ function confirmCreateEffect(returnToBinding = false) {
 
     const components = {};
 
-    // 收集属性
+    // 1. 属性
     const stats = {};
-    const sAtk = parseInt(document.getElementById("comp-stat-atk").value);
-    const sDef = parseInt(document.getElementById("comp-stat-def").value);
-    const sMove = parseInt(document.getElementById("comp-stat-move").value);
-    const sRange = parseInt(document.getElementById("comp-stat-range").value);
-    if (sAtk) stats.atk = sAtk;
-    if (sDef) stats.def = sDef;
-    if (sMove) stats.move = sMove;
-    if (sRange) stats.range = sRange;
+    if (parseInt(document.getElementById("comp-stat-atk").value)) stats.atk = parseInt(document.getElementById("comp-stat-atk").value);
+    if (parseInt(document.getElementById("comp-stat-def").value)) stats.def = parseInt(document.getElementById("comp-stat-def").value);
+    if (parseInt(document.getElementById("comp-stat-move").value)) stats.move = parseInt(document.getElementById("comp-stat-move").value);
+    if (parseInt(document.getElementById("comp-stat-range").value)) stats.range = parseInt(document.getElementById("comp-stat-range").value);
     if (Object.keys(stats).length > 0) components.stats = stats;
 
-    // 收集 Tick
+    // 2. Tick
     const tick = {};
-    const tDmg = parseInt(document.getElementById("comp-tick-dmg").value);
-    const tHeal = parseInt(document.getElementById("comp-tick-heal").value);
-    if (tDmg) tick.damage = tDmg;
-    if (tHeal) tick.heal = tHeal;
+    if (parseInt(document.getElementById("comp-tick-dmg").value)) tick.damage = parseInt(document.getElementById("comp-tick-dmg").value);
+    if (parseInt(document.getElementById("comp-tick-heal").value)) tick.heal = parseInt(document.getElementById("comp-tick-heal").value);
     if (Object.keys(tick).length > 0) components.tick = tick;
 
-    // 收集 Inhibit
+    // 3. 限制
     const inhibit = {};
     if (document.getElementById("comp-inhibit-move").checked) inhibit.move = true;
     if (document.getElementById("comp-inhibit-attack").checked) inhibit.attack = true;
     if (document.getElementById("comp-inhibit-skill").checked) inhibit.skill = true;
     if (Object.keys(inhibit).length > 0) components.inhibit = inhibit;
 
-    // 收集 Protect
+    // 4. 保护
     const pRange = parseInt(document.getElementById("comp-protect-range").value);
     if (pRange) components.protect = { limitRange: pRange };
 
-    // 收集 Aura
+    // 5. 光环
     const auraRange = parseInt(document.getElementById("comp-aura-range").value);
     if (auraRange) {
         components.aura = {
             range: auraRange,
             target: document.getElementById("comp-aura-target").value,
-            stats: stats, // 光环通常携带属性变化
+            stats: stats,
             inhibit: inhibit
         };
     }
 
+    // 6. 条件
+    const condStat = document.getElementById("comp-cond-stat").value;
+    if (condStat) {
+        components.condition = {
+            stat: condStat,
+            operator: document.getElementById("comp-cond-op").value,
+            value: parseInt(document.getElementById("comp-cond-val").value) || 0,
+            percent: document.getElementById("comp-cond-pct").checked
+        };
+    }
+
+    // 7. 触发器 (NEW)
+    const trigger = {};
+    if (document.getElementById("comp-trig-move").value) trigger.onMove = document.getElementById("comp-trig-move").value;
+    if (document.getElementById("comp-trig-kill").value) trigger.onKill = document.getElementById("comp-trig-kill").value;
+    if (Object.keys(trigger).length > 0) components.trigger = trigger;
+
     const newEffect = { id, name, emoji, color: "emerald", desc, duration, stackable, components };
 
-    // 如果是编辑实例，调用回调并返回；否则存入库
     if (STATE.tempOnConfirm) {
         STATE.tempOnConfirm(newEffect);
         STATE.tempOnConfirm = null;
     } else {
         EFFECT_LIBRARY[id] = newEffect;
-        addLog(`✅ 已创建全局状态并存入库：${emoji} ${name}`, "emerald");
+        addLog(`✅ 已更新状态模板：${emoji} ${name}`, "emerald");
     }
 
     popEditorState();
@@ -1818,9 +1959,10 @@ function editBoundEffect(index) {
             unit.effectConfig = newConfig;
             unit.effectId = newConfig.id;
         } else {
-            unit.activeEffects[index] = { ...unit.activeEffects[index], ...newConfig };
+            unit.activeEffects[index] = { ...newConfig };
         }
         addLog(`✅ 已更新状态实例数值`, "amber");
+        renderEditForm(); // 刷新编辑器
     };
 
     pushEditorState(showCreateEffectForm, {
@@ -2021,13 +2163,23 @@ function showAddEffectToSkillForm(skillId, type) {
 }
 
 function editSkillEffect(skillId, index, type) {
-    const skill = GAME_CONFIG.SKILLS[skillId];
-    const effects = (type === 'target') ? (skill.targetEffects || []) : (skill.selfEffects || []);
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
+    if (!skill) return;
+    const effects = (type === 'target') ? (skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [])) : (skill.selfEffects || []);
     const targetEffect = effects[index];
 
     STATE.tempOnConfirm = (newConfig) => {
-        effects[index] = { ...effects[index], ...newConfig };
+        if (type === 'target' && !skill.targetEffects && skill.effectId) {
+            skill.targetEffects = [{...newConfig}];
+            skill.effectId = null;
+        } else {
+            effects[index] = { ...newConfig };
+        }
         addLog(`✅ 已更新技能状态实例数值`, "amber");
+
+        // 返回后自动刷新上一层 UI
+        if (skillId === 'temp') showAddSkillForm(false);
+        else renderSkillEffectBinding(skillId);
     };
 
     pushEditorState(showCreateEffectForm, {
@@ -2588,9 +2740,20 @@ function showStatDetail(event, unit, statName, statLabel) {
 
 function showStatusDetail(event, eff, isAura = false) {
     const config = EFFECT_HANDLERS.getConfig(eff);
+    const comps = config.components;
+
+    let extraTags = "";
+    if (comps.condition) {
+        const c = comps.condition;
+        extraTags += `<div class="text-[8px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded border border-blue-500/30">条件: ${c.stat.toUpperCase()} ${c.operator} ${c.value}${c.percent ? '%' : ''}</div>`;
+    }
+    if (comps.trigger) {
+        if (comps.trigger.onMove) extraTags += `<div class="text-[8px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">触发: 移动时</div>`;
+        if (comps.trigger.onKill) extraTags += `<div class="text-[8px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">触发: 击杀时</div>`;
+    }
 
     let content = `
-        <div class="space-y-2">
+        <div class="space-y-3">
             <div class="flex items-center gap-2 border-b border-white/10 pb-2">
                 <span class="text-2xl">${config.emoji}</span>
                 <div>
@@ -2601,6 +2764,7 @@ function showStatusDetail(event, eff, isAura = false) {
                 </div>
             </div>
             <p class="text-[11px] text-slate-300 leading-relaxed">${config.desc}</p>
+            ${extraTags ? `<div class="flex flex-wrap gap-1 mt-2">${extraTags}</div>` : ""}
             ${eff.stacks > 1 ? `<div class="text-[10px] text-amber-400 font-bold">当前叠加: ${eff.stacks} 层</div>` : ''}
         </div>`;
 
@@ -2755,9 +2919,14 @@ function enemyTurn() {
         }
 
         const fromRow = enemy.row, fromCol = enemy.col;
+        const dist = Math.abs(fromRow - bestR) + Math.abs(fromCol - bestC);
         enemy.row = bestR; enemy.col = bestC;
         addLog(`<span class="text-rose-400">${enemy.emoji} ${enemy.name}</span> 移动到 (${bestR},${bestC})`, "rose");
         AnimationManager.animateMove(fromRow, fromCol, bestR, bestC, enemy.emoji);
+
+        // 触发敌方移动事件
+        EFFECT_HANDLERS.trigger(enemy, "onMove", { fromRow, fromCol, toRow: bestR, toCol: bestC, dist });
+
         applyTerrainEffect(enemy);
         renderBoard();
 
