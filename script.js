@@ -51,84 +51,263 @@ const GAME_CONFIG = {
 };
 
 /**
- * ====================== 【完整版】解耦效果系统 Effect System ======================
- * 完全模块化：定义 + 处理逻辑分离，支持技能和地形自由组合
+ * ====================== 【重构版】组件化效果系统 ======================
  */
 const EFFECT_LIBRARY = {
-    poison: { id: "poison", name: "中毒", emoji: "☠️", desc: "每回合结束受到伤害", duration: 3, tickDamage: 3, stackable: true, color: "emerald" },
-    burn:   { id: "burn",   name: "燃烧", emoji: "🔥", desc: "每回合结束受到伤害", duration: 2, tickDamage: 5, stackable: false, color: "rose" },
-    slow:   { id: "slow",   name: "减速", emoji: "🐢", desc: "移动范围减少", duration: 2, moveReduce: 2, stackable: true, color: "cyan" },
-    stun:   { id: "stun",   name: "禁锢", emoji: "⛓️", desc: "无法移动和攻击", duration: 1, disableMove: true, disableAttack: true, stackable: false, color: "slate" },
-    blind:  { id: "blind",  name: "致盲", emoji: "🌫️", desc: "攻击范围减少", duration: 2, rangeReduce: 1, stackable: true, color: "amber" },
-    silence:{ id: "silence",name: "沉默", emoji: "🔇", desc: "无法使用技能", duration: 2, disableSkill: true, stackable: false, color: "violet" },
-    regen:  { id: "regen",  name: "生命回复", emoji: "❤️", desc: "每回合回复生命", duration: 3, tickHeal: 4, stackable: true, color: "emerald" },
-    atkBuff:{ id: "atkBuff",name: "攻击强化", emoji: "⚔️", desc: "攻击力提升", duration: 3, atkAdd: 4, stackable: true, color: "amber" },
-    defBuff:{ id: "defBuff",name: "防御强化", emoji: "🛡️", desc: "防御力提升", duration: 3, defAdd: 3, stackable: true, color: "sky" },
-    tempSkill: { id: "tempSkill", name: "临时技能", emoji: "✨", desc: "获得临时技能", duration: 2, grantSkill: null, stackable: false, color: "violet" }
-};
-
-/**
- * 效果处理器（完全解耦）
- */
-const EFFECT_HANDLERS = {
-    tick(unit, eff) {
-        const template = EFFECT_LIBRARY[eff.id];
-        if (template.tickDamage) unit.hp = Math.max(0, unit.hp - template.tickDamage);
-        if (template.tickHeal)   unit.hp = Math.min(unit.maxHp, unit.hp + template.tickHeal);
+    poison: {
+        id: "poison", name: "中毒", emoji: "☠️", color: "emerald", duration: 3, stackable: true,
+        desc: "每回合结束受到伤害，数值随层数叠加",
+        components: { tick: { damage: 3 } }
     },
-
-    getEffectiveStat(unit, stat) {
-        if (!unit.activeEffects) return 0;
-        let value = 0;
-        unit.activeEffects.forEach(eff => {
-            const t = EFFECT_LIBRARY[eff.id];
-            if (stat === "atk" && t.atkAdd) value += t.atkAdd;
-            if (stat === "def" && t.defAdd) value += t.defAdd;
-            if (stat === "move" && t.moveReduce) value -= t.moveReduce;
-            if (stat === "range" && t.rangeReduce) value -= t.rangeReduce;
-        });
-        return value;
+    burn: {
+        id: "burn", name: "燃烧", emoji: "🔥", color: "rose", duration: 2, stackable: false,
+        desc: "每回合结束受到较高伤害",
+        components: { tick: { damage: 5 } }
     },
-
-    isDisabled(unit, action) {
-        if (!unit.activeEffects) return false;
-        return unit.activeEffects.some(eff => {
-            const t = EFFECT_LIBRARY[eff.id];
-            if (action === "move" && t.disableMove) return true;
-            if (action === "attack" && t.disableAttack) return true;
-            if (action === "skill" && t.disableSkill) return true;
-            return false;
-        });
+    slow: {
+        id: "slow", name: "减速", emoji: "🐢", color: "cyan", duration: 2, stackable: true,
+        desc: "移动范围减少",
+        components: { stats: { move: -2 } }
+    },
+    stun: {
+        id: "stun", name: "禁锢", emoji: "⛓️", color: "slate", duration: 1, stackable: false,
+        desc: "无法移动和攻击",
+        components: { inhibit: { move: true, attack: true } }
+    },
+    blind: {
+        id: "blind", name: "致盲", emoji: "🌫️", color: "amber", duration: 2, stackable: true,
+        desc: "攻击范围减少",
+        components: { stats: { range: -1 } }
+    },
+    silence: {
+        id: "silence", name: "沉默", emoji: "🔇", color: "violet", duration: 2, stackable: false,
+        desc: "无法使用技能",
+        components: { inhibit: { skill: true } }
+    },
+    regen: {
+        id: "regen", name: "生命回复", emoji: "❤️", color: "emerald", duration: 3, stackable: true,
+        desc: "每回合回复生命",
+        components: { tick: { heal: 4 } }
+    },
+    atkBuff: {
+        id: "atkBuff", name: "攻击强化", emoji: "⚔️", color: "amber", duration: 3, stackable: true,
+        desc: "攻击力提升",
+        components: { stats: { atk: 4 } }
+    },
+    defBuff: {
+        id: "defBuff", name: "防御强化", emoji: "🛡️", color: "sky", duration: 3, stackable: true,
+        desc: "防御力提升",
+        components: { stats: { def: 3 } }
+    },
+    commander: {
+        id: "commander", name: "统帅光环", emoji: "🚩", color: "indigo", duration: 99, stackable: false,
+        desc: "增加周围 2 格友军 5 点攻击力",
+        components: { aura: { range: 2, target: "ally", stats: { atk: 5 } } }
+    },
+    thorns: {
+        id: "thorns", name: "荆棘", emoji: "🌵", color: "lime", duration: 3, stackable: false,
+        desc: "受到近战攻击时，反弹 4 点伤害",
+        components: { trigger: { onDefend: "thornsEffect" } }
+    },
+    lifesteal: {
+        id: "lifesteal", name: "吸血", emoji: "🧛", color: "rose", duration: 3, stackable: false,
+        desc: "攻击造成伤害时，回复 50% 伤害量的生命值",
+        components: { trigger: { onAttack: "lifestealEffect" } }
+    },
+    manaAura: {
+        id: "manaAura", name: "法力泉涌", emoji: "💎", color: "cyan", duration: 99, stackable: false,
+        desc: "周围 1 格的友军禁止使用技能（测试光环禁用）",
+        components: { aura: { range: 1, target: "ally", inhibit: { skill: true } } }
+    },
+    berserk: {
+        id: "berserk", name: "狂暴", emoji: "💢", color: "rose", duration: 2, stackable: true,
+        desc: "大幅提升攻击力(+8)，但防御力大幅下降(-5)",
+        components: { stats: { atk: 8, def: -5 } }
     }
 };
 
 /**
- * 应用效果（给技能和地形统一使用）
+ * 效果组件处理器 - 预留接口，支持未来通过代码注册新组件
+ */
+const COMPONENT_PROCESSORS = {
+    tick: (unit, eff, params) => {
+        const stacks = eff.stacks || 1;
+        if (params.damage) {
+            const dmg = params.damage * stacks;
+            unit.hp = Math.max(0, unit.hp - dmg);
+            addLog(`${unit.emoji} 受到 ${dmg} 点 <span class="text-rose-400">持续伤害</span>`, "rose");
+        }
+        if (params.heal) {
+            const heal = params.heal * stacks;
+            unit.hp = Math.min(unit.maxHp, unit.hp + heal);
+            addLog(`${unit.emoji} 获得 ${heal} 点 <span class="text-emerald-400">持续治疗</span>`, "emerald");
+        }
+    },
+    stats: (unit, eff, params, statName) => {
+        const stacks = eff.stacks || 1;
+        return params[statName] ? params[statName] * stacks : 0;
+    },
+    inhibit: (unit, eff, params, action) => {
+        return params[action] || false;
+    },
+    trigger: (unit, eff, params, event, data) => {
+        const handlers = {
+            thornsEffect: (u, d) => {
+                if (d.attacker && d.range === 1) {
+                    d.attacker.hp = Math.max(0, d.attacker.hp - 4);
+                    addLog(`🌵 荆棘反伤！对 ${d.attacker.emoji} 造成 4 点伤害`, "lime");
+                    AnimationManager.showDamagePopup(4, d.attacker.row, d.attacker.col);
+                }
+            },
+            lifestealEffect: (u, d) => {
+                if (d.damageDealt > 0) {
+                    const heal = Math.floor(d.damageDealt * 0.5);
+                    u.hp = Math.min(u.maxHp, u.hp + heal);
+                    addLog(`🧛 吸血！回复 ${heal} 点生命`, "rose");
+                }
+            }
+        };
+        const funcName = params[event];
+        if (funcName && handlers[funcName]) handlers[funcName](unit, data);
+    }
+};
+
+/**
+ * 效果处理器核心
+ */
+const EFFECT_HANDLERS = {
+    tick(unit, eff) {
+        const template = EFFECT_LIBRARY[eff.id];
+        if (template && template.components.tick) {
+            COMPONENT_PROCESSORS.tick(unit, eff, template.components.tick);
+        }
+    },
+
+    /**
+     * 获取属性修正及来源
+     */
+    getStatModifier(unit, stat) {
+        const sources = [];
+        let total = 0;
+
+        // 1. 基础状态 (Active Effects)
+        if (unit.activeEffects) {
+            unit.activeEffects.forEach(eff => {
+                const t = EFFECT_LIBRARY[eff.id];
+                if (t && t.components.stats) {
+                    const mod = COMPONENT_PROCESSORS.stats(unit, eff, t.components.stats, stat);
+                    if (mod !== 0) {
+                        total += mod;
+                        sources.push({ name: t.name, icon: t.emoji, value: mod, type: "effect" });
+                    }
+                }
+            });
+        }
+
+        // 2. 光环 (Dynamic Auras)
+        const auras = this.calculateAurasForUnit(unit);
+        auras.forEach(aura => {
+            if (aura.stats && aura.stats[stat]) {
+                total += aura.stats[stat];
+                sources.push({ name: aura.sourceName, icon: aura.icon, value: aura.stats[stat], type: "aura" });
+            }
+        });
+
+        // 3. 地形特殊修正 (森林)
+        if (unit.forestModifier) {
+            if (stat === "move" || stat === "range") {
+                total -= 1;
+                sources.push({ name: "森林限制", icon: "🌲", value: -1, type: "terrain" });
+            }
+        }
+
+        return { total, sources };
+    },
+
+    isDisabled(unit, action) {
+        // 状态限制
+        const fromEffects = (unit.activeEffects || []).some(eff => {
+            const t = EFFECT_LIBRARY[eff.id];
+            return t?.components.inhibit && COMPONENT_PROCESSORS.inhibit(unit, eff, t.components.inhibit, action);
+        });
+        if (fromEffects) return true;
+
+        // 光环限制
+        const auras = this.calculateAurasForUnit(unit);
+        return auras.some(aura => aura.inhibit && aura.inhibit[action]);
+    },
+
+    trigger(unit, event, data) {
+        if (!unit.activeEffects) return;
+        unit.activeEffects.forEach(eff => {
+            const t = EFFECT_LIBRARY[eff.id];
+            if (t && t.components.trigger) {
+                COMPONENT_PROCESSORS.trigger(unit, eff, t.components.trigger, event, data);
+            }
+        });
+    },
+
+    calculateAurasForUnit(target) {
+        const activeAuras = [];
+        const allUnits = [...STATE.friendlyUnits, ...STATE.enemyUnits];
+        const targetTeam = STATE.friendlyUnits.includes(target) ? "friendly" : "enemy";
+
+        allUnits.forEach(source => {
+            if (source.hp <= 0 || source === target) return;
+            const sourceTeam = STATE.friendlyUnits.includes(source) ? "friendly" : "enemy";
+
+            source.activeEffects?.forEach(eff => {
+                const t = EFFECT_LIBRARY[eff.id];
+                const aura = t?.components.aura;
+                if (aura) {
+                    const dist = Math.abs(source.row - target.row) + Math.abs(source.col - target.col);
+                    if (dist <= aura.range) {
+                        let match = false;
+                        if (aura.target === "ally" && sourceTeam === targetTeam) match = true;
+                        if (aura.target === "enemy" && sourceTeam !== targetTeam) match = true;
+                        if (aura.target === "all") match = true;
+
+                        if (match) {
+                            activeAuras.push({
+                                sourceName: source.name,
+                                icon: t.emoji,
+                                stats: aura.stats,
+                                inhibit: aura.inhibit
+                            });
+                        }
+                    }
+                }
+            });
+        });
+        return activeAuras;
+    }
+};
+
+/**
+ * 应用效果
  */
 function applyEffect(unit, effectId, customDuration = null) {
     if (!unit.activeEffects) unit.activeEffects = [];
     const template = EFFECT_LIBRARY[effectId];
     if (!template) return;
 
-    const effect = {
-        id: effectId,
-        remainingTurns: customDuration !== null ? customDuration : template.duration
-    };
-
-    if (template.stackable) {
-        const existing = unit.activeEffects.find(e => e.id === effectId);
-        if (existing) {
-            existing.remainingTurns = Math.max(existing.remainingTurns, effect.remainingTurns);
-            return;
+    const existing = unit.activeEffects.find(e => e.id === effectId);
+    if (existing) {
+        if (template.stackable) {
+            existing.stacks = (existing.stacks || 1) + 1;
+            addLog(`${unit.emoji} ${unit.name} 的 ${template.name} 叠加至 <span class="font-bold">${existing.stacks}</span> 层`, template.color);
         }
+        existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : template.duration);
+    } else {
+        unit.activeEffects.push({
+            id: effectId,
+            stacks: 1,
+            remainingTurns: customDuration !== null ? customDuration : template.duration
+        });
+        addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${template.color}-400">${template.emoji} ${template.name}</span>`, template.color);
     }
-    unit.activeEffects.push(effect);
-    addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${template.color}-400">${template.emoji} ${template.name}</span>`, template.color);
 }
 
-/**
- * 每回合结束统一 Tick 所有效果
- */
 function tickAllEffects() {
     [...STATE.friendlyUnits, ...STATE.enemyUnits].forEach(unit => {
         if (!unit.activeEffects || unit.hp <= 0) return;
@@ -147,13 +326,10 @@ function tickAllEffects() {
     });
 }
 
-/**
- * 计算当前有效属性（不修改原始值）
- */
-function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getEffectiveStat(unit, "atk"); }
-function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getEffectiveStat(unit, "def"); }
-function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange - EFFECT_HANDLERS.getEffectiveStat(unit, "move")); }
-function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange - EFFECT_HANDLERS.getEffectiveStat(unit, "range")); }
+function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getStatModifier(unit, "atk").total; }
+function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getStatModifier(unit, "def").total; }
+function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange + EFFECT_HANDLERS.getStatModifier(unit, "move").total); }
+function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange + EFFECT_HANDLERS.getStatModifier(unit, "range").total); }
 
 /**
  * 【架构重构】GameState 类 - 统一管理所有游戏状态
@@ -561,12 +737,58 @@ function updateCellContent(cell, row, col) {
     );
     cell.style.boxShadow = "";   // 清除自定义阴影
 
+    // 清理旧的状态图标容器
+    const oldStatus = cell.querySelector(".status-icons-container");
+    if (oldStatus) oldStatus.remove();
+
     // 战斗单位
     if (combatUnit) {
         cell.setAttribute("data-combat", combatUnit.emoji);
         cell.style.background = combatTeam === "friendly"
             ? "rgba(16, 185, 129, 0.12)"
             : "rgba(239, 68, 68, 0.12)";
+
+        // 状态图标显示逻辑 (纵向循环滚动)
+        if (combatUnit.activeEffects && combatUnit.activeEffects.length > 0) {
+            const container = document.createElement("div");
+            container.className = "status-icons-container";
+            container.style.pointerEvents = "auto"; // 允许点击图标查看详情
+            cell.appendChild(container);
+
+            const effects = combatUnit.activeEffects;
+            let currentIndex = 0;
+
+            const updateIcons = () => {
+                if (!cell.contains(container)) return; // 单元格已刷新，停止循环
+                container.innerHTML = "";
+                const eff = effects[currentIndex];
+                const template = EFFECT_LIBRARY[eff.id];
+                if (template) {
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "status-icon-wrapper active";
+                    wrapper.innerHTML = `<span>${template.emoji}</span>${eff.stacks > 1 ? `<span class="status-stacks">${eff.stacks}</span>` : ""}`;
+                    wrapper.onclick = (e) => {
+                        e.stopPropagation();
+                        showStatusDetail(eff);
+                    };
+                    container.appendChild(wrapper);
+                }
+
+                if (effects.length > 1) {
+                    cell.dataset.statusTimer = setTimeout(() => {
+                        const active = container.querySelector(".status-icon-wrapper");
+                        if (active) {
+                            active.classList.remove("active");
+                            active.classList.add("exit");
+                        }
+                        currentIndex = (currentIndex + 1) % effects.length;
+                        cell.dataset.statusTimer = setTimeout(updateIcons, 500);
+                    }, 2500);
+                }
+            };
+            if (cell.dataset.statusTimer) clearTimeout(parseInt(cell.dataset.statusTimer));
+            updateIcons();
+        }
     } else {
         cell.removeAttribute("data-combat");
         cell.style.background = "";
@@ -763,15 +985,20 @@ function attemptPlayerMove(unit, targetRow, targetCol) {
 
 function performAttack(attacker, defender) {
     if (EFFECT_HANDLERS.isDisabled(attacker, "attack")) {
-        addLog(`${attacker.emoji} ${attacker.name} 被禁锢/致盲，无法攻击！`, "slate");
+        addLog(`${attacker.emoji} ${attacker.name} 被控制，无法攻击！`, "slate");
         return;
     }
 
-    let damage = Math.max(1, getEffectiveAtk(attacker) - defender.def);
+    const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
+    let damage = Math.max(1, getEffectiveAtk(attacker) - getEffectiveDef(defender));
     defender.hp = Math.max(0, defender.hp - damage);
 
-    const attackerColor = (attacker.type === "knight" || attacker.type === "archer") ? "emerald" : "rose";
+    const attackerColor = (attacker.team === "friendly") ? "emerald" : "rose";
     addLog(`<span class="text-${attackerColor}-400">${attacker.emoji}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, attackerColor);
+
+    // 触发事件
+    EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range });
+    EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range });
 
     AnimationManager.showDamagePopup(damage, defender.row, defender.col);
     if (attacker.atkRange === 1) {
@@ -783,14 +1010,23 @@ function performAttack(attacker, defender) {
 
 function performSkill(attacker, skillId, defender) {
     const skill = GAME_CONFIG.SKILLS[skillId];
-    let damage = Math.max(1, skill.damage - defender.def);
+    const range = Math.abs(attacker.row - defender.row) + Math.abs(attacker.col - defender.col);
+    let damage = Math.max(1, skill.damage - getEffectiveDef(defender));
     defender.hp = Math.max(0, defender.hp - damage);
 
     addLog(`<span class="text-cyan-400">${skill.emoji}</span> <span class="font-bold">${skill.name}</span> 对 <span class="text-rose-400">${defender.emoji}</span> 造成 <span class="font-bold text-rose-400">${damage}</span> 伤害`, "cyan");
 
+    // 触发事件 (技能也算攻击触发)
+    EFFECT_HANDLERS.trigger(attacker, "onAttack", { target: defender, damageDealt: damage, range, isSkill: true });
+    EFFECT_HANDLERS.trigger(defender, "onDefend", { attacker: attacker, damageReceived: damage, range, isSkill: true });
+
     // 新增：技能可以附加效果
     if (skill.effectId) {
         applyEffect(defender, skill.effectId, skill.effectDuration);
+    }
+    // 处理多个效果 (如果后续扩展为数组)
+    if (skill.effects) {
+        skill.effects.forEach(eff => applyEffect(defender, eff.id, eff.duration));
     }
 
     // 新增：伤害跳字（技能伤害）
@@ -1111,6 +1347,305 @@ function renderEditForm() {
     }
     // 战斗单位技能列表保持原来逻辑
     if (!isTerrain && !isPendingAdd && unit) renderCurrentNormalSkills();
+
+    // 【新增】状态绑定显示
+    if (!isPendingAdd && unit) renderEffectBindingList(unit);
+
+    // 【新增】全局状态编辑器入口
+    if (!isPendingAdd) renderGlobalEffectEditorLink();
+}
+
+/**
+ * 渲染全局状态编辑器链接
+ */
+function renderGlobalEffectEditorLink() {
+    const container = document.createElement("div");
+    container.className = "mt-12 pt-6 border-t-2 border-dashed border-purple-500/20";
+    container.innerHTML = `
+        <button onclick="showGlobalEffectEditor()" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+            <span>✨</span> 状态库管理器
+        </button>
+        <p class="text-[9px] text-slate-500 text-center mt-3 uppercase tracking-widest">在这里定义新的全局状态组件</p>
+    `;
+    document.getElementById("edit-unit-form").appendChild(container);
+}
+
+function showGlobalEffectEditor() {
+    const container = document.getElementById("edit-unit-form");
+    const html = `
+        <div class="bg-slate-900 border border-purple-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
+            <div class="flex justify-between items-center">
+                <div class="text-purple-400 font-black text-xl uppercase">状态库管理器</div>
+                <button onclick="renderEditForm()" class="text-slate-500 hover:text-white">✕</button>
+            </div>
+
+            <div class="space-y-3 max-h-64 overflow-y-auto custom-scroll pr-2">
+                ${Object.keys(EFFECT_LIBRARY).map(id => {
+                    const t = EFFECT_LIBRARY[id];
+                    return `
+                    <div class="flex items-center gap-3 bg-slate-800/40 p-3 rounded-2xl border border-white/5">
+                        <span class="text-2xl">${t.emoji}</span>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-bold text-xs">${t.name}</div>
+                            <div class="text-[9px] text-slate-500 truncate">${t.desc}</div>
+                        </div>
+                        <button onclick="deleteGlobalEffect('${id}')" class="p-2 text-rose-500/50 hover:text-rose-400 transition-colors text-xs">删除</button>
+                    </div>`;
+                }).join("")}
+            </div>
+
+            <button onclick="showCreateEffectForm()" class="w-full py-4 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 font-bold rounded-2xl transition-all">
+                + 定义新状态
+            </button>
+
+            <button onclick="renderEditForm()" class="w-full py-3 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">返回编辑器</button>
+        </div>
+    `;
+    container.innerHTML = html;
+}
+
+function deleteGlobalEffect(id) {
+    if (confirm(`确定要从库中删除状态「${EFFECT_LIBRARY[id].name}」吗？已经绑定的单位可能会失效。`)) {
+        delete EFFECT_LIBRARY[id];
+        showGlobalEffectEditor();
+    }
+}
+
+function showCreateEffectForm() {
+    const container = document.getElementById("edit-unit-form");
+    container.innerHTML = `
+        <div class="bg-slate-900 border border-emerald-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
+            <div class="text-emerald-400 font-black text-xl uppercase">定义新状态</div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1">图标 (Emoji)</label>
+                    <input id="new-eff-emoji" placeholder="⚡" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 mb-1">状态名称</label>
+                    <input id="new-eff-name" placeholder="力量祝福" class="editor-input w-full px-4 py-2 rounded-xl">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 mb-1">状态 ID (唯一英文字符)</label>
+                <input id="new-eff-id" placeholder="atk_buff_2" class="editor-input w-full px-4 py-2 rounded-xl font-mono text-xs">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 mb-1">描述</label>
+                <input id="new-eff-desc" placeholder="简短描述效果" class="editor-input w-full px-4 py-2 rounded-xl text-xs">
+            </div>
+
+            <div class="space-y-4">
+                <div class="text-[10px] font-black text-emerald-500/60 uppercase tracking-widest">配置组件</div>
+
+                <!-- 属性组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">属性修正 (数值叠加)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="comp-stat-atk" type="number" placeholder="ATK +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-def" type="number" placeholder="DEF +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-move" type="number" placeholder="MOVE +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-range" type="number" placeholder="RANGE +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                    </div>
+                </div>
+
+                <!-- 持续组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">周期触发</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="comp-tick-dmg" type="number" placeholder="每回合伤害" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-tick-heal" type="number" placeholder="每回合治疗" class="editor-input px-3 py-2 rounded-lg text-xs">
+                    </div>
+                </div>
+
+                <!-- 行为限制 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">行为限制</div>
+                    <div class="flex flex-wrap gap-4">
+                        <label class="flex items-center gap-2 text-[10px] text-slate-300">
+                            <input id="comp-inhibit-move" type="checkbox" class="accent-rose-500"> 禁止移动
+                        </label>
+                        <label class="flex items-center gap-2 text-[10px] text-slate-300">
+                            <input id="comp-inhibit-attack" type="checkbox" class="accent-rose-500"> 禁止攻击
+                        </label>
+                        <label class="flex items-center gap-2 text-[10px] text-slate-300">
+                            <input id="comp-inhibit-skill" type="checkbox" class="accent-rose-500"> 禁止技能
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 光环组件 -->
+                <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
+                    <div class="text-[10px] font-bold text-slate-400">光环配置 (影响周围单位)</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="comp-aura-range" type="number" placeholder="范围 (格)" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <select id="comp-aura-target" class="editor-input px-3 py-2 rounded-lg text-xs">
+                            <option value="ally">仅友军</option>
+                            <option value="enemy">仅敌军</option>
+                            <option value="all">所有人</option>
+                        </select>
+                    </div>
+                    <div class="text-[9px] text-slate-500 italic">光环生效时会应用上述属性修正/行为限制</div>
+                </div>
+
+                <!-- 时长 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1">默认持续时间</label>
+                        <input id="new-eff-dur" type="number" value="3" class="editor-input w-full px-4 py-2 rounded-xl text-center">
+                    </div>
+                    <div class="flex items-center gap-2 pt-4">
+                        <input id="new-eff-stack" type="checkbox" checked class="w-5 h-5 accent-emerald-500">
+                        <label class="text-xs font-bold text-slate-300">支持数值叠加</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="confirmCreateEffect()" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">保存到库</button>
+                <button onclick="showGlobalEffectEditor()" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
+            </div>
+        </div>
+    `;
+}
+
+function confirmCreateEffect() {
+    const id = document.getElementById("new-eff-id").value || ("eff_" + Date.now());
+    const name = document.getElementById("new-eff-name").value || "新状态";
+    const emoji = document.getElementById("new-eff-emoji").value || "✨";
+    const desc = document.getElementById("new-eff-desc").value || "";
+    const duration = parseInt(document.getElementById("new-eff-dur").value) || 3;
+    const stackable = document.getElementById("new-eff-stack").checked;
+
+    const components = {};
+
+    // 收集属性
+    const stats = {};
+    const sAtk = parseInt(document.getElementById("comp-stat-atk").value);
+    const sDef = parseInt(document.getElementById("comp-stat-def").value);
+    const sMove = parseInt(document.getElementById("comp-stat-move").value);
+    const sRange = parseInt(document.getElementById("comp-stat-range").value);
+    if (sAtk) stats.atk = sAtk;
+    if (sDef) stats.def = sDef;
+    if (sMove) stats.move = sMove;
+    if (sRange) stats.range = sRange;
+    if (Object.keys(stats).length > 0) components.stats = stats;
+
+    // 收集 Tick
+    const tick = {};
+    const tDmg = parseInt(document.getElementById("comp-tick-dmg").value);
+    const tHeal = parseInt(document.getElementById("comp-tick-heal").value);
+    if (tDmg) tick.damage = tDmg;
+    if (tHeal) tick.heal = tHeal;
+    if (Object.keys(tick).length > 0) components.tick = tick;
+
+    // 收集 Inhibit
+    const inhibit = {};
+    if (document.getElementById("comp-inhibit-move").checked) inhibit.move = true;
+    if (document.getElementById("comp-inhibit-attack").checked) inhibit.attack = true;
+    if (document.getElementById("comp-inhibit-skill").checked) inhibit.skill = true;
+    if (Object.keys(inhibit).length > 0) components.inhibit = inhibit;
+
+    // 收集 Aura
+    const auraRange = parseInt(document.getElementById("comp-aura-range").value);
+    if (auraRange) {
+        components.aura = {
+            range: auraRange,
+            target: document.getElementById("comp-aura-target").value,
+            stats: stats, // 光环通常携带属性变化
+            inhibit: inhibit
+        };
+    }
+
+    EFFECT_LIBRARY[id] = { id, name, emoji, color: "emerald", desc, duration, stackable, components };
+
+    addLog(`✅ 已创建全局状态并存入库：${emoji} ${name}`, "emerald");
+    showGlobalEffectEditor();
+}
+
+/**
+ * 渲染状态绑定列表
+ */
+function renderEffectBindingList(unit) {
+    const isTerrain = STATE.editingUnit.isTerrain;
+    const container = document.createElement("div");
+    container.className = "mt-6 pt-6 border-t border-white/10";
+    container.innerHTML = `
+        <div class="text-xs uppercase text-purple-300 mb-3 flex justify-between font-bold tracking-widest opacity-60">
+            <span>附加状态管理</span>
+            <button onclick="showAddEffectToUnitForm()" class="text-[10px] px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/60 rounded-lg border border-indigo-500/30">+ 绑定状态</button>
+        </div>
+        <div id="unit-bound-effects" class="space-y-2"></div>
+    `;
+
+    document.getElementById("edit-unit-form").appendChild(container);
+    const list = document.getElementById("unit-bound-effects");
+
+    // 地形使用 effectId, 战斗单位使用 activeEffects
+    const boundEffects = isTerrain ? (unit.effectId ? [{id: unit.effectId, duration: unit.effectDuration}] : []) : (unit.activeEffects || []);
+
+    list.innerHTML = boundEffects.map((eff, idx) => {
+        const t = EFFECT_LIBRARY[eff.id || eff];
+        if (!t) return "";
+        return `
+            <div class="flex items-center gap-3 bg-slate-800/60 p-3 rounded-xl border border-white/5">
+                <span class="text-2xl">${t.emoji}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-xs truncate">${t.name}</div>
+                    <div class="text-[9px] text-slate-500">${t.desc}</div>
+                </div>
+                <button onclick="removeEffectFromUnit(${idx})" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
+            </div>
+        `;
+    }).join("");
+}
+
+function showAddEffectToUnitForm() {
+    const container = document.getElementById("edit-unit-form");
+    const html = `
+        <div class="bg-indigo-900/10 border border-indigo-400/20 rounded-2xl p-5 mb-6">
+            <div class="text-indigo-400 text-xs font-bold mb-4 uppercase tracking-widest">选择要绑定的状态</div>
+            <div class="grid grid-cols-2 gap-2 mb-4 max-h-48 overflow-y-auto custom-scroll">
+                ${Object.keys(EFFECT_LIBRARY).map(id => `
+                    <button onclick="confirmBindEffect('${id}')" class="flex items-center gap-2 p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-left transition-all">
+                        <span>${EFFECT_LIBRARY[id].emoji}</span>
+                        <span class="text-[10px] font-bold truncate">${EFFECT_LIBRARY[id].name}</span>
+                    </button>
+                `).join("")}
+            </div>
+            <button onclick="renderEditForm()" class="w-full py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">取消</button>
+        </div>
+    `;
+    container.innerHTML = html + container.innerHTML;
+}
+
+function confirmBindEffect(effectId) {
+    const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+    if (STATE.editingUnit.isTerrain) {
+        unit.effectId = effectId;
+        unit.effectDuration = EFFECT_LIBRARY[effectId].duration || 3;
+    } else {
+        if (!unit.activeEffects) unit.activeEffects = [];
+        // 如果已经有了，不重复添加
+        if (!unit.activeEffects.some(e => e.id === effectId)) {
+            unit.activeEffects.push({ id: effectId, stacks: 1, remainingTurns: EFFECT_LIBRARY[effectId].duration });
+        }
+    }
+    addLog(`✅ 已为单位绑定状态：${EFFECT_LIBRARY[effectId].name}`, "indigo");
+    renderEditForm();
+}
+
+function removeEffectFromUnit(index) {
+    const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+    if (STATE.editingUnit.isTerrain) {
+        unit.effectId = null;
+    } else {
+        unit.activeEffects.splice(index, 1);
+    }
+    renderEditForm();
 }
 
 /**
@@ -1219,6 +1754,75 @@ function editExistingSkill(skillId) {
             </div>
         </div>`;
     container.innerHTML = html + container.innerHTML;
+    renderSkillEffectBinding(skillId);
+}
+
+function renderSkillEffectBinding(skillId) {
+    const skill = GAME_CONFIG.SKILLS[skillId];
+    const container = document.createElement("div");
+    container.className = "mt-4 pt-4 border-t border-amber-500/20";
+    container.innerHTML = `
+        <div class="text-[10px] font-bold text-amber-500/60 uppercase mb-2">技能附加效果</div>
+        <div id="skill-bound-effects" class="space-y-1 mb-2"></div>
+        <button onclick="showAddEffectToSkillForm('${skillId}')" class="w-full py-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/30 transition-all">+ 绑定新效果</button>
+    `;
+    document.querySelector(".bg-amber-900/10 .space-y-4").appendChild(container);
+
+    const list = document.getElementById("skill-bound-effects");
+    const effects = skill.effects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
+
+    list.innerHTML = effects.map((eff, idx) => {
+        const t = EFFECT_LIBRARY[eff.id];
+        if (!t) return "";
+        return `
+            <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
+                <span>${t.emoji} ${t.name} (${eff.duration}T)</span>
+                <button onclick="removeEffectFromSkill('${skillId}', ${idx})" class="text-rose-400">✕</button>
+            </div>
+        `;
+    }).join("");
+}
+
+function showAddEffectToSkillForm(skillId) {
+    const list = document.getElementById("skill-bound-effects");
+    const html = `
+        <div class="p-3 bg-slate-800 rounded-xl space-y-3 mb-3 border border-amber-500/30">
+            <select id="new-skill-eff-id" class="editor-input w-full px-2 py-1 rounded text-[10px]">
+                ${Object.keys(EFFECT_LIBRARY).map(id => `<option value="${id}">${EFFECT_LIBRARY[id].emoji} ${EFFECT_LIBRARY[id].name}</option>`).join("")}
+            </select>
+            <input id="new-skill-eff-dur" type="number" value="3" class="editor-input w-full px-2 py-1 rounded text-[10px]" placeholder="持续回合">
+            <div class="flex gap-2">
+                <button onclick="confirmBindEffectToSkill('${skillId}')" class="flex-1 py-1 bg-amber-600 text-white text-[10px] font-bold rounded">确定</button>
+                <button onclick="renderEditForm()" class="flex-1 py-1 bg-slate-700 text-slate-300 text-[10px] font-bold rounded">取消</button>
+            </div>
+        </div>
+    `;
+    list.insertAdjacentHTML('beforebegin', html);
+}
+
+function confirmBindEffectToSkill(skillId) {
+    const skill = GAME_CONFIG.SKILLS[skillId];
+    const id = document.getElementById("new-skill-eff-id").value;
+    const duration = parseInt(document.getElementById("new-skill-eff-dur").value) || 3;
+
+    if (!skill.effects) skill.effects = skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [];
+    skill.effects.push({id, duration});
+    skill.effectId = null; // 清除旧的单效果字段
+
+    addLog(`✅ 已为技能「${skill.name}」添加附加效果`, "amber");
+    renderEditForm();
+    editExistingSkill(skillId); // 重新进入编辑模式以刷新列表
+}
+
+function removeEffectFromSkill(skillId, index) {
+    const skill = GAME_CONFIG.SKILLS[skillId];
+    if (skill.effects) {
+        skill.effects.splice(index, 1);
+    } else if (skill.effectId) {
+        skill.effectId = null;
+    }
+    renderEditForm();
+    editExistingSkill(skillId);
 }
 
 function confirmEditSkill(skillId) {
@@ -1419,24 +2023,35 @@ function updateSelectedPanel() {
         hpFill.className = `hp-fill ${isFriendly ? "bg-gradient-to-r from-emerald-600 to-emerald-400" : "bg-gradient-to-r from-rose-600 to-rose-400"}`;
         document.getElementById("selected-hp-text").innerHTML = `${entity.hp} <span class="opacity-40">/</span> ${entity.maxHp}`;
 
-        const atkBonus = EFFECT_HANDLERS.getEffectiveStat(entity,'atk');
-        document.getElementById("selected-atk").innerHTML = `
+        const atkMod = EFFECT_HANDLERS.getStatModifier(entity,'atk');
+        const atkEl = document.getElementById("selected-atk");
+        atkEl.innerHTML = `
             ${getEffectiveAtk(entity)}
-            ${atkBonus !== 0 ? `<span class="text-xs ${atkBonus > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">(${atkBonus > 0 ? '+' : ''}${atkBonus})</span>` : ''}`;
+            ${atkMod.total !== 0 ? `<span class="text-xs ${atkMod.total > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${atkMod.total > 0 ? '+' : ''}${atkMod.total})</span>` : ''}`;
+        atkEl.onclick = () => showStatDetail(entity, "atk", "攻击力");
 
-        const defBonus = EFFECT_HANDLERS.getEffectiveStat(entity,'def');
-        document.getElementById("selected-def").innerHTML = `
+        const defMod = EFFECT_HANDLERS.getStatModifier(entity,'def');
+        const defEl = document.getElementById("selected-def");
+        defEl.innerHTML = `
             ${getEffectiveDef(entity)}
-            ${defBonus !== 0 ? `<span class="text-xs ${defBonus > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold">(${defBonus > 0 ? '+' : ''}${defBonus})</span>` : ''}`;
+            ${defMod.total !== 0 ? `<span class="text-xs ${defMod.total > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${defMod.total > 0 ? '+' : ''}${defMod.total})</span>` : ''}`;
+        defEl.onclick = () => showStatDetail(entity, "def", "防御力");
 
         const effMove = getEffectiveMoveRange(entity);
-        document.getElementById("selected-remaining-move").innerHTML = `
-            <span class="text-emerald-400">${effMove}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.moveRange}</span>`;
+        const moveMod = EFFECT_HANDLERS.getStatModifier(entity,'move').total;
+        const moveEl = document.getElementById("selected-remaining-move");
+        moveEl.innerHTML = `
+            <span class="text-emerald-400">${effMove}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.moveRange}</span>
+            ${moveMod !== 0 ? `<span class="text-[10px] ${moveMod > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold ml-1 cursor-pointer underline decoration-dotted">${moveMod > 0 ? '+' : ''}${moveMod}</span>` : ''}`;
+        moveEl.onclick = () => showStatDetail(entity, "move", "移动范围");
 
         const effRange = getEffectiveAtkRange(entity);
-        document.getElementById("selected-range").innerHTML = `
+        const rangeMod = EFFECT_HANDLERS.getStatModifier(entity,'range').total;
+        const rangeEl = document.getElementById("selected-range");
+        rangeEl.innerHTML = `
             <span class="text-rose-400">${effRange}</span>
-            ${effRange !== entity.atkRange ? `<span class="text-xs text-cyan-400 font-bold">(${effRange > entity.atkRange ? '+' : ''}${effRange - entity.atkRange})</span>` : ''}`;
+            ${rangeMod !== 0 ? `<span class="text-xs ${rangeMod > 0 ? 'text-emerald-400' : 'text-rose-400'} font-bold cursor-pointer underline decoration-dotted">(${rangeMod > 0 ? '+' : ''}${rangeMod})</span>` : ''}`;
+        rangeEl.onclick = () => showStatDetail(entity, "range", "攻击范围");
 
         document.getElementById("selected-mana").innerHTML = `
             <span class="text-cyan-400">${entity.currentMana}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.maxMana}</span>`;
@@ -1453,8 +2068,9 @@ function updateSelectedPanel() {
                 const template = EFFECT_LIBRARY[eff.id];
                 if (!template) return;
                 const div = document.createElement("div");
-                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${template.color}-500/20 text-${template.color}-300 border border-${template.color}-500/30`;
+                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${template.color}-500/20 text-${template.color}-300 border border-${template.color}-500/30 cursor-pointer hover:brightness-125 transition-all`;
                 div.innerHTML = `${template.emoji} ${template.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
+                div.onclick = () => showStatusDetail(eff);
                 effectsContainer.appendChild(div);
             });
         } else {
@@ -1544,12 +2160,101 @@ function updateUI() {
     endBtn.style.filter = STATE.currentTurn === "player" ? "" : "grayscale(1)";
 }
 
+function showStatDetail(unit, statName, statLabel) {
+    const modData = EFFECT_HANDLERS.getStatModifier(unit, statName);
+    const baseValue = (statName === "atk") ? unit.atk :
+                     (statName === "def") ? unit.def :
+                     (statName === "move") ? unit.moveRange : unit.atkRange;
+
+    let content = `<div class="text-left space-y-4">
+        <div class="flex justify-between items-center border-b border-white/10 pb-3">
+            <span class="text-slate-400 font-bold uppercase tracking-widest text-xs">${statLabel} 计算详情</span>
+            <span class="text-2xl font-black text-white">${baseValue + modData.total}</span>
+        </div>
+
+        <div class="space-y-2">
+            <div class="flex justify-between items-center px-3 py-2 bg-slate-800/40 rounded-xl border border-white/5">
+                <span class="text-slate-300">基础数值</span>
+                <span class="font-mono font-bold">${baseValue}</span>
+            </div>`;
+
+    if (modData.sources.length > 0) {
+        modData.sources.forEach(src => {
+            const isPos = src.value > 0;
+            content += `
+            <div class="flex justify-between items-center px-3 py-2 bg-slate-800/40 rounded-xl border border-white/5">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">${src.icon}</span>
+                    <span class="text-slate-300 text-xs">${src.name}</span>
+                </div>
+                <span class="font-mono font-bold ${isPos ? 'text-emerald-400' : 'text-rose-400'}">
+                    ${isPos ? '+' : ''}${src.value}
+                </span>
+            </div>`;
+        });
+    } else {
+        content += `<div class="text-center py-4 text-[10px] text-slate-500 uppercase tracking-tighter">无任何修正项</div>`;
+    }
+
+    content += `</div>
+        <div class="pt-2 border-t border-white/10 flex justify-between text-[10px] font-bold text-slate-500 uppercase">
+            <span>最终结果</span>
+            <span class="text-white">${baseValue + modData.total}</span>
+        </div>
+    </div>`;
+
+    showGenericModal(`${statLabel} 属性详情`, content);
+}
+
+function showStatusDetail(eff) {
+    const template = EFFECT_LIBRARY[eff.id];
+    if (!template) return;
+
+    let content = `<div class="text-left space-y-3">
+        <div class="flex items-center gap-3 border-b border-white/10 pb-2">
+            <span class="text-4xl">${template.emoji}</span>
+            <div>
+                <div class="font-bold text-xl text-${template.color}-400">${template.name}</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-widest">剩余持续: ${eff.remainingTurns} 回合</div>
+            </div>
+        </div>
+        <p class="text-sm text-slate-300 leading-relaxed">${template.desc}</p>`;
+
+    if (eff.stacks > 1) {
+        content += `<div class="bg-slate-800/50 p-2 rounded-lg text-xs border border-white/5">
+            <span class="text-amber-400 font-bold">当前叠加:</span> ${eff.stacks} 层 (数值倍增)
+        </div>`;
+    }
+
+    content += `</div>`;
+    showGenericModal(template.emoji + " 效果详情", content);
+}
+
+function showGenericModal(title, htmlContent) {
+    const modal = document.getElementById("result-modal");
+    modal.classList.remove("hidden");
+    document.getElementById("result-icon").innerHTML = "";
+    document.getElementById("result-title").innerHTML = title;
+    document.getElementById("result-text").innerHTML = htmlContent;
+
+    // 使用独立按钮逻辑，避免污染胜负结算弹窗
+    const btn = modal.querySelector("button");
+    btn.textContent = "确定";
+    btn.onclick = () => hideModal();
+}
+
 function showResult(isWin) {
     const modal = document.getElementById("result-modal");
     modal.classList.remove("hidden");
     const iconEl = document.getElementById("result-icon");
     const titleEl = document.getElementById("result-title");
     const textEl = document.getElementById("result-text");
+
+    // 恢复按钮默认逻辑
+    const btn = modal.querySelector("button");
+    btn.textContent = "再来一局";
+    btn.onclick = () => { hideModal(); resetGame(); };
+
     if (isWin) {
         iconEl.textContent = "🏆";
         titleEl.innerHTML = `<span class="text-emerald-400">胜利！</span>`;
@@ -1566,6 +2271,7 @@ function exportBoard() {
     const exportData = {
         unitTypes: GAME_CONFIG.UNIT_TYPES,
         skills: GAME_CONFIG.SKILLS,
+        effects: EFFECT_LIBRARY,
         friendlyUnits: STATE.friendlyUnits,
         enemyUnits: STATE.enemyUnits,
         terrainUnits: STATE.terrainUnits,
@@ -1596,6 +2302,7 @@ function handleImport(e) {
             const imported = jsyaml.load(ev.target.result);
             if (imported.unitTypes) Object.assign(GAME_CONFIG.UNIT_TYPES, imported.unitTypes);
             if (imported.skills) Object.assign(GAME_CONFIG.SKILLS, imported.skills);
+            if (imported.effects) Object.assign(EFFECT_LIBRARY, imported.effects);
 
             STATE.friendlyUnits = (imported.friendlyUnits || []).map(u => ({ ...u }));
             STATE.enemyUnits = (imported.enemyUnits || []).map(u => ({ ...u }));
