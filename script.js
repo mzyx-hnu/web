@@ -211,10 +211,24 @@ const COMPONENT_PROCESSORS = {
  * 效果处理器核心
  */
 const EFFECT_HANDLERS = {
+    // 统一获取配置（如果实例有自定义组件则用实例的，否则用库模板的）
+    getConfig(eff) {
+        const template = EFFECT_LIBRARY[eff.id] || {};
+        return {
+            name: eff.name || template.name || "未知状态",
+            emoji: eff.emoji || template.emoji || "✨",
+            color: eff.color || template.color || "slate",
+            desc: eff.desc || template.desc || "",
+            duration: eff.duration !== undefined ? eff.duration : template.duration,
+            stackable: eff.stackable !== undefined ? eff.stackable : template.stackable,
+            components: eff.components || template.components || {}
+        };
+    },
+
     tick(unit, eff) {
-        const template = EFFECT_LIBRARY[eff.id];
-        if (template && template.components.tick) {
-            COMPONENT_PROCESSORS.tick(unit, eff, template.components.tick);
+        const config = this.getConfig(eff);
+        if (config.components.tick) {
+            COMPONENT_PROCESSORS.tick(unit, eff, config.components.tick);
         }
     },
 
@@ -228,12 +242,12 @@ const EFFECT_HANDLERS = {
         // 1. 基础状态 (Active Effects)
         if (unit.activeEffects) {
             unit.activeEffects.forEach(eff => {
-                const t = EFFECT_LIBRARY[eff.id];
-                if (t && t.components.stats) {
-                    const mod = COMPONENT_PROCESSORS.stats(unit, eff, t.components.stats, stat);
+                const config = this.getConfig(eff);
+                if (config.components.stats) {
+                    const mod = COMPONENT_PROCESSORS.stats(unit, eff, config.components.stats, stat);
                     if (mod !== 0) {
                         total += mod;
-                        sources.push({ name: t.name, icon: t.emoji, value: mod, type: "effect" });
+                        sources.push({ name: config.name, icon: config.emoji, value: mod, type: "effect" });
                     }
                 }
             });
@@ -254,8 +268,8 @@ const EFFECT_HANDLERS = {
     isDisabled(unit, action) {
         // 状态限制
         const fromEffects = (unit.activeEffects || []).some(eff => {
-            const t = EFFECT_LIBRARY[eff.id];
-            return t?.components.inhibit && COMPONENT_PROCESSORS.inhibit(unit, eff, t.components.inhibit, action);
+            const config = this.getConfig(eff);
+            return config.components.inhibit && COMPONENT_PROCESSORS.inhibit(unit, eff, config.components.inhibit, action);
         });
         if (fromEffects) return true;
 
@@ -281,9 +295,9 @@ const EFFECT_HANDLERS = {
     trigger(unit, event, data) {
         if (!unit.activeEffects) return;
         unit.activeEffects.forEach(eff => {
-            const t = EFFECT_LIBRARY[eff.id];
-            if (t && t.components.trigger) {
-                COMPONENT_PROCESSORS.trigger(unit, eff, t.components.trigger, event, data);
+            const config = this.getConfig(eff);
+            if (config.components.trigger) {
+                COMPONENT_PROCESSORS.trigger(unit, eff, config.components.trigger, event, data);
             }
         });
     },
@@ -302,8 +316,8 @@ const EFFECT_HANDLERS = {
 
             // 处理普通单位的效果光环
             source.activeEffects?.forEach(eff => {
-                const t = EFFECT_LIBRARY[eff.id];
-                const aura = t?.components.aura;
+                const config = this.getConfig(eff);
+                const aura = config.components.aura;
                 if (aura) {
                     const dist = Math.abs(source.row - target.row) + Math.abs(source.col - target.col);
                     if (dist <= aura.range) {
@@ -312,7 +326,7 @@ const EFFECT_HANDLERS = {
                             activeAuras.push({
                                 id: eff.id,
                                 sourceName: source.name,
-                                icon: t.emoji,
+                                icon: config.emoji,
                                 stats: aura.stats,
                                 inhibit: aura.inhibit,
                                 protect: aura.protect
@@ -324,15 +338,16 @@ const EFFECT_HANDLERS = {
 
             // 处理地形自带的光环 (非触发型)
             if (source.isTerrain && source.effectId && !source.effectIsTrigger) {
-                const t = EFFECT_LIBRARY[source.effectId];
-                if (t && source.row === target.row && source.col === target.col) {
+                const terrainEff = source.effectConfig || { id: source.effectId };
+                const config = this.getConfig(terrainEff);
+                if (source.row === target.row && source.col === target.col) {
                     activeAuras.push({
-                        id: source.effectId,
+                        id: config.id,
                         sourceName: source.name,
-                        icon: t.emoji,
-                        stats: t.components.stats,
-                        inhibit: t.components.inhibit,
-                        protect: t.components.protect
+                        icon: config.emoji,
+                        stats: config.components.stats,
+                        inhibit: config.components.inhibit,
+                        protect: config.components.protect
                     });
                 }
             }
@@ -351,26 +366,39 @@ const EFFECT_HANDLERS = {
 
 /**
  * 应用效果
+ * @param {Object} unit 目标单位
+ * @param {string|Object} effectData 效果ID或完整效果配置对象
+ * @param {number} customDuration 可选持续回合
  */
-function applyEffect(unit, effectId, customDuration = null) {
+function applyEffect(unit, effectData, customDuration = null) {
     if (!unit.activeEffects) unit.activeEffects = [];
-    const template = EFFECT_LIBRARY[effectId];
-    if (!template) return;
 
+    // 如果是对象，则视为实例副本；如果是字符串，则视为引用 ID
+    let effectInstance;
+    if (typeof effectData === 'string') {
+        const template = EFFECT_LIBRARY[effectData];
+        if (!template) return;
+        effectInstance = { id: effectData };
+    } else {
+        effectInstance = JSON.parse(JSON.stringify(effectData)); // 深度复制实例
+    }
+
+    const config = EFFECT_HANDLERS.getConfig(effectInstance);
+    const effectId = effectInstance.id;
+
+    // 检查是否已有同名/同ID效果
     const existing = unit.activeEffects.find(e => e.id === effectId);
     if (existing) {
-        if (template.stackable) {
+        if (config.stackable) {
             existing.stacks = (existing.stacks || 1) + 1;
-            addLog(`${unit.emoji} ${unit.name} 的 ${template.name} 叠加至 <span class="font-bold">${existing.stacks}</span> 层`, template.color);
+            addLog(`${unit.emoji} ${unit.name} 的 ${config.name} 叠加至 <span class="font-bold">${existing.stacks}</span> 层`, config.color);
         }
-        existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : template.duration);
+        existing.remainingTurns = Math.max(existing.remainingTurns, customDuration !== null ? customDuration : config.duration);
     } else {
-        unit.activeEffects.push({
-            id: effectId,
-            stacks: 1,
-            remainingTurns: customDuration !== null ? customDuration : template.duration
-        });
-        addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${template.color}-400">${template.emoji} ${template.name}</span>`, template.color);
+        effectInstance.stacks = 1;
+        effectInstance.remainingTurns = customDuration !== null ? customDuration : config.duration;
+        unit.activeEffects.push(effectInstance);
+        addLog(`${unit.emoji} ${unit.name} 获得 <span class="text-${config.color}-400">${config.emoji} ${config.name}</span>`, config.color);
     }
 }
 
@@ -414,6 +442,7 @@ class GameState {
         this.editingUnit = null;     // {team, id, isTerrain, pendingAdd, row, col, pendingCopy, sourceId}
         this.editingSkillId = null;
         this.previewTimeout = null;
+        this.editorHistory = [];     // 存储渲染函数的引用或状态对象
     }
 
     reset() {
@@ -428,6 +457,7 @@ class GameState {
         this.editingUnit = null;
         this.editingSkillId = null;
         this.previewTimeout = null;
+        this.editorHistory = [];
     }
 }
 
@@ -836,11 +866,11 @@ function updateCellContent(cell, row, col) {
                 if (!cell.contains(container)) return; // 单元格已刷新，停止循环
                 container.innerHTML = "";
                 const eff = effects[currentIndex];
-                const template = EFFECT_LIBRARY[eff.id];
-                if (template) {
+                const config = EFFECT_HANDLERS.getConfig(eff);
+                if (config) {
                     const wrapper = document.createElement("div");
                     wrapper.className = "status-icon-wrapper active";
-                    wrapper.innerHTML = `<span>${template.emoji}</span>${eff.stacks > 1 ? `<span class="status-stacks">${eff.stacks}</span>` : ""}`;
+                    wrapper.innerHTML = `<span>${config.emoji}</span>${eff.stacks > 1 ? `<span class="status-stacks">${eff.stacks}</span>` : ""}`;
                     wrapper.onclick = (e) => {
                         e.stopPropagation();
                         showStatusDetail(e, eff);
@@ -1014,7 +1044,7 @@ function applyTerrainEffect(unit) {
 
     // 新增：支持地形自带效果 (仅限触发型)
     if (terrain.effectId && terrain.effectIsTrigger) {
-        applyEffect(unit, terrain.effectId, terrain.effectDuration || 3);
+        applyEffect(unit, terrain.effectConfig || terrain.effectId, terrain.effectDuration || 3);
     }
     if (terrain.temporary) STATE.terrainUnits.splice(terrainIndex, 1);
 }
@@ -1098,11 +1128,11 @@ function performSkill(attacker, skillId, defender) {
 
     // 施加状态 (对目标)
     const targetEffects = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
-    targetEffects.forEach(eff => applyEffect(defender, eff.id, eff.duration));
+    targetEffects.forEach(eff => applyEffect(defender, eff, eff.duration));
 
     // 施加状态 (对自己)
     const selfEffects = skill.selfEffects || [];
-    selfEffects.forEach(eff => applyEffect(attacker, eff.id, eff.duration));
+    selfEffects.forEach(eff => applyEffect(attacker, eff, eff.duration));
 
     AnimationManager.animateProjectile(attacker.row, attacker.col, defender.row, defender.col, skill.emoji);
     AnimationManager.showSkillNamePopup(skill.name, defender.row, defender.col);
@@ -1307,9 +1337,36 @@ function handleEditClick(row, col) {
 }
 
 /**
+ * 编辑器导航系统
+ */
+function pushEditorState(renderFn, ...args) {
+    STATE.editorHistory.push({ renderFn, args });
+    renderFn(...args);
+}
+
+function popEditorState() {
+    if (STATE.editorHistory.length <= 1) {
+        STATE.editorHistory = [];
+        renderEditForm();
+        return;
+    }
+    STATE.editorHistory.pop(); // 弹出当前的
+    const last = STATE.editorHistory[STATE.editorHistory.length - 1];
+    last.renderFn(...last.args);
+}
+
+function clearEditorHistory() {
+    STATE.editorHistory = [];
+}
+
+/**
  * 编辑器表单渲染（已优化：技能输入框增加标签 + 地形改为预设选择 + 空白格高亮）
  */
-function renderEditForm() {
+function renderEditForm(isBack = false) {
+    if (!isBack) {
+        clearEditorHistory();
+        STATE.editorHistory.push({ renderFn: renderEditForm, args: [true] });
+    }
     const container = document.getElementById("edit-unit-form");
     if (!STATE.editingUnit) {
         container.innerHTML = `<div class="text-center text-slate-400 py-12">点击棋盘上的任意格子开始编辑</div>`;
@@ -1381,7 +1438,7 @@ function renderEditForm() {
                 <div>
                     <div class="text-xs uppercase text-purple-300 mb-3 flex justify-between font-bold tracking-widest opacity-60">
                         <span>技能管理</span>
-                        <button onclick="showAddSkillForm()" class="text-[10px] px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg border border-purple-500/30">+ 新增技能</button>
+                        <button onclick="pushEditorState(showAddSkillForm)" class="text-[10px] px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg border border-purple-500/30">+ 新增技能</button>
                     </div>
                     <div id="edit-normal-skills" class="space-y-2"></div>
                     <div class="mt-4">
@@ -1434,7 +1491,7 @@ function renderGlobalEffectEditorLink() {
     const container = document.createElement("div");
     container.className = "mt-12 pt-6 border-t-2 border-dashed border-purple-500/20";
     container.innerHTML = `
-        <button onclick="showGlobalEffectEditor()" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+        <button onclick="pushEditorState(showGlobalEffectEditor)" class="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black rounded-2xl shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
             <span>✨</span> 状态库管理器
         </button>
         <p class="text-[9px] text-slate-500 text-center mt-3 uppercase tracking-widest">在这里定义新的全局状态组件</p>
@@ -1448,7 +1505,7 @@ function showGlobalEffectEditor() {
         <div class="bg-slate-900 border border-purple-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="flex justify-between items-center">
                 <div class="text-purple-400 font-black text-xl uppercase">状态库管理器</div>
-                <button onclick="renderEditForm()" class="text-slate-500 hover:text-white">✕</button>
+                <button onclick="popEditorState()" class="text-slate-500 hover:text-white">✕</button>
             </div>
 
             <div class="space-y-3 max-h-64 overflow-y-auto custom-scroll pr-2">
@@ -1466,11 +1523,11 @@ function showGlobalEffectEditor() {
                 }).join("")}
             </div>
 
-            <button onclick="showCreateEffectForm()" class="w-full py-4 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 font-bold rounded-2xl transition-all">
+            <button onclick="pushEditorState(showCreateEffectForm)" class="w-full py-4 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 font-bold rounded-2xl transition-all">
                 + 定义新状态
             </button>
 
-            <button onclick="renderEditForm()" class="w-full py-3 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">返回编辑器</button>
+            <button onclick="popEditorState()" class="w-full py-3 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">返回</button>
         </div>
     `;
     container.innerHTML = html;
@@ -1483,31 +1540,40 @@ function deleteGlobalEffect(id) {
     }
 }
 
-function showCreateEffectForm(fromBinding = false) {
+function showCreateEffectForm(options = {}) {
+    const {
+        fromBinding = false,
+        isInstance = false,
+        baseEffect = null,
+        onConfirm = null
+    } = options;
+
     const container = document.getElementById("edit-unit-form");
+    const config = baseEffect ? EFFECT_HANDLERS.getConfig(baseEffect) : { components: {} };
+
     container.innerHTML = `
         <div class="bg-slate-900 border border-emerald-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
-            <div class="text-emerald-400 font-black text-xl uppercase">定义新状态</div>
+            <div class="text-emerald-400 font-black text-xl uppercase">${isInstance ? '编辑当前状态实例' : (fromBinding ? '创建并绑定状态' : '定义新状态')}</div>
 
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 mb-1">图标 (Emoji)</label>
-                    <input id="new-eff-emoji" placeholder="⚡" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl">
+                    <input id="new-eff-emoji" value="${config.emoji || '✨'}" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 mb-1">状态名称</label>
-                    <input id="new-eff-name" placeholder="力量祝福" class="editor-input w-full px-4 py-2 rounded-xl">
+                    <input id="new-eff-name" value="${config.name || ''}" class="editor-input w-full px-4 py-2 rounded-xl">
                 </div>
             </div>
 
-            <div>
+            <div class="${isInstance ? 'hidden' : ''}">
                 <label class="block text-[10px] font-bold text-slate-500 mb-1">状态 ID (唯一英文字符)</label>
-                <input id="new-eff-id" placeholder="atk_buff_2" class="editor-input w-full px-4 py-2 rounded-xl font-mono text-xs">
+                <input id="new-eff-id" value="${config.id || ''}" placeholder="atk_buff_2" class="editor-input w-full px-4 py-2 rounded-xl font-mono text-xs">
             </div>
 
             <div>
                 <label class="block text-[10px] font-bold text-slate-500 mb-1">描述</label>
-                <input id="new-eff-desc" placeholder="简短描述效果" class="editor-input w-full px-4 py-2 rounded-xl text-xs">
+                <input id="new-eff-desc" value="${config.desc || ''}" class="editor-input w-full px-4 py-2 rounded-xl text-xs">
             </div>
 
             <div class="space-y-4">
@@ -1517,10 +1583,10 @@ function showCreateEffectForm(fromBinding = false) {
                 <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
                     <div class="text-[10px] font-bold text-slate-400">属性修正 (数值叠加)</div>
                     <div class="grid grid-cols-2 gap-2">
-                        <input id="comp-stat-atk" type="number" placeholder="ATK +" class="editor-input px-3 py-2 rounded-lg text-xs">
-                        <input id="comp-stat-def" type="number" placeholder="DEF +" class="editor-input px-3 py-2 rounded-lg text-xs">
-                        <input id="comp-stat-move" type="number" placeholder="MOVE +" class="editor-input px-3 py-2 rounded-lg text-xs">
-                        <input id="comp-stat-range" type="number" placeholder="RANGE +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-atk" type="number" value="${config.components.stats?.atk || ''}" placeholder="ATK +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-def" type="number" value="${config.components.stats?.def || ''}" placeholder="DEF +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-move" type="number" value="${config.components.stats?.move || ''}" placeholder="MOVE +" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-stat-range" type="number" value="${config.components.stats?.range || ''}" placeholder="RANGE +" class="editor-input px-3 py-2 rounded-lg text-xs">
                     </div>
                 </div>
 
@@ -1528,8 +1594,8 @@ function showCreateEffectForm(fromBinding = false) {
                 <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
                     <div class="text-[10px] font-bold text-slate-400">周期触发</div>
                     <div class="grid grid-cols-2 gap-2">
-                        <input id="comp-tick-dmg" type="number" placeholder="每回合伤害" class="editor-input px-3 py-2 rounded-lg text-xs">
-                        <input id="comp-tick-heal" type="number" placeholder="每回合治疗" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-tick-dmg" type="number" value="${config.components.tick?.damage || ''}" placeholder="每回合伤害" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-tick-heal" type="number" value="${config.components.tick?.heal || ''}" placeholder="每回合治疗" class="editor-input px-3 py-2 rounded-lg text-xs">
                     </div>
                 </div>
 
@@ -1538,13 +1604,13 @@ function showCreateEffectForm(fromBinding = false) {
                     <div class="text-[10px] font-bold text-slate-400">行为限制</div>
                     <div class="flex flex-wrap gap-4">
                         <label class="flex items-center gap-2 text-[10px] text-slate-300">
-                            <input id="comp-inhibit-move" type="checkbox" class="accent-rose-500"> 禁止移动
+                            <input id="comp-inhibit-move" type="checkbox" ${config.components.inhibit?.move ? 'checked' : ''} class="accent-rose-500"> 禁止移动
                         </label>
                         <label class="flex items-center gap-2 text-[10px] text-slate-300">
-                            <input id="comp-inhibit-attack" type="checkbox" class="accent-rose-500"> 禁止攻击
+                            <input id="comp-inhibit-attack" type="checkbox" ${config.components.inhibit?.attack ? 'checked' : ''} class="accent-rose-500"> 禁止攻击
                         </label>
                         <label class="flex items-center gap-2 text-[10px] text-slate-300">
-                            <input id="comp-inhibit-skill" type="checkbox" class="accent-rose-500"> 禁止技能
+                            <input id="comp-inhibit-skill" type="checkbox" ${config.components.inhibit?.skill ? 'checked' : ''} class="accent-rose-500"> 禁止技能
                         </label>
                     </div>
                 </div>
@@ -1553,7 +1619,7 @@ function showCreateEffectForm(fromBinding = false) {
                 <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
                     <div class="text-[10px] font-bold text-slate-400">特殊保护 (地形组件)</div>
                     <div class="grid grid-cols-1 gap-2">
-                        <input id="comp-protect-range" type="number" placeholder="限制攻击者距离 (例如森林为1)" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-protect-range" type="number" value="${config.components.protect?.limitRange || ''}" placeholder="限制攻击者距离 (例如森林为1)" class="editor-input px-3 py-2 rounded-lg text-xs">
                     </div>
                 </div>
 
@@ -1561,11 +1627,11 @@ function showCreateEffectForm(fromBinding = false) {
                 <div class="p-4 bg-slate-800/40 rounded-2xl border border-white/5 space-y-3">
                     <div class="text-[10px] font-bold text-slate-400">光环配置 (影响周围单位)</div>
                     <div class="grid grid-cols-2 gap-2">
-                        <input id="comp-aura-range" type="number" placeholder="范围 (格)" class="editor-input px-3 py-2 rounded-lg text-xs">
+                        <input id="comp-aura-range" type="number" value="${config.components.aura?.range || ''}" placeholder="范围 (格)" class="editor-input px-3 py-2 rounded-lg text-xs">
                         <select id="comp-aura-target" class="editor-input px-3 py-2 rounded-lg text-xs">
-                            <option value="ally">仅友军</option>
-                            <option value="enemy">仅敌军</option>
-                            <option value="all">所有人</option>
+                            <option value="ally" ${config.components.aura?.target === 'ally' ? 'selected' : ''}>仅友军</option>
+                            <option value="enemy" ${config.components.aura?.target === 'enemy' ? 'selected' : ''}>仅敌军</option>
+                            <option value="all" ${config.components.aura?.target === 'all' ? 'selected' : ''}>所有人</option>
                         </select>
                     </div>
                     <div class="text-[9px] text-slate-500 italic">光环生效时会应用上述属性修正/行为限制</div>
@@ -1585,8 +1651,8 @@ function showCreateEffectForm(fromBinding = false) {
             </div>
 
             <div class="flex gap-2">
-                <button onclick="confirmCreateEffect(${fromBinding})" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">保存到库</button>
-                <button onclick="${fromBinding ? 'renderEditForm()' : 'showGlobalEffectEditor()'}" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
+                <button onclick="confirmCreateEffect(${fromBinding})" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-all">确认</button>
+                <button onclick="popEditorState()" class="flex-1 py-4 bg-slate-800 text-slate-400 font-bold rounded-2xl transition-all">取消</button>
             </div>
         </div>
     `;
@@ -1644,18 +1710,18 @@ function confirmCreateEffect(returnToBinding = false) {
         };
     }
 
-    EFFECT_LIBRARY[id] = { id, name, emoji, color: "emerald", desc, duration, stackable, components };
+    const newEffect = { id, name, emoji, color: "emerald", desc, duration, stackable, components };
 
-    addLog(`✅ 已创建全局状态并存入库：${emoji} ${name}`, "emerald");
-    if (returnToBinding) {
-        if (STATE.editingSkillId) {
-            editExistingSkill(STATE.editingSkillId);
-        } else {
-            renderEditForm();
-        }
+    // 如果是编辑实例，调用回调并返回；否则存入库
+    if (STATE.tempOnConfirm) {
+        STATE.tempOnConfirm(newEffect);
+        STATE.tempOnConfirm = null;
     } else {
-        showGlobalEffectEditor();
+        EFFECT_LIBRARY[id] = newEffect;
+        addLog(`✅ 已创建全局状态并存入库：${emoji} ${name}`, "emerald");
     }
+
+    popEditorState();
 }
 
 /**
@@ -1668,7 +1734,7 @@ function renderEffectBindingList(unit) {
     container.innerHTML = `
         <div class="text-xs uppercase text-purple-300 mb-3 flex justify-between font-bold tracking-widest opacity-60">
             <span>附加状态管理</span>
-            <button onclick="showAddEffectToUnitForm()" class="text-[10px] px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/60 rounded-lg border border-indigo-500/30">+ 绑定状态</button>
+            <button onclick="pushEditorState(showAddEffectToUnitForm)" class="text-[10px] px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/60 rounded-lg border border-indigo-500/30">+ 绑定状态</button>
         </div>
         <div id="unit-bound-effects" class="space-y-2"></div>
     `;
@@ -1689,7 +1755,10 @@ function renderEffectBindingList(unit) {
                     <div class="font-bold text-xs truncate">${t.name}</div>
                     <div class="text-[9px] text-slate-500">${t.desc}</div>
                 </div>
-                <button onclick="removeEffectFromUnit(${idx})" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
+                <div class="flex gap-1">
+                    <button onclick="editBoundEffect(${idx})" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
+                    <button onclick="removeEffectFromUnit(${idx})" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
+                </div>
             </div>
         `;
     }).join("");
@@ -1699,10 +1768,10 @@ function showAddEffectToUnitForm() {
     STATE.editingSkillId = null;
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="bg-indigo-900/10 border border-indigo-400/20 rounded-2xl p-5 mb-6">
+        <div class="bg-slate-900 border border-indigo-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="flex justify-between items-center mb-4">
                 <div class="text-indigo-400 text-xs font-bold uppercase tracking-widest">选择要绑定的状态</div>
-                <button onclick="showCreateEffectForm(true)" class="text-[9px] px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">新建状态库条目</button>
+                <button onclick="pushEditorState(showCreateEffectForm, true)" class="text-[9px] px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">新建状态库条目</button>
             </div>
             <div class="grid grid-cols-2 gap-2 mb-4 max-h-48 overflow-y-auto custom-scroll">
                 ${Object.keys(EFFECT_LIBRARY).map(id => `
@@ -1712,10 +1781,10 @@ function showAddEffectToUnitForm() {
                     </button>
                 `).join("")}
             </div>
-            <button onclick="renderEditForm()" class="w-full py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">取消</button>
+            <button onclick="popEditorState()" class="w-full py-3 bg-slate-800 text-slate-400 rounded-xl text-xs font-bold">取消</button>
         </div>
     `;
-    container.innerHTML = html + container.innerHTML;
+    container.innerHTML = html;
 }
 
 function confirmBindEffect(effectId) {
@@ -1733,7 +1802,31 @@ function confirmBindEffect(effectId) {
         }
     }
     addLog(`✅ 已为单位绑定状态：${EFFECT_LIBRARY[effectId].name}`, "indigo");
-    renderEditForm();
+    popEditorState();
+}
+
+function editBoundEffect(index) {
+    const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
+    const effects = STATE.editingUnit.isTerrain
+        ? (unit.effectConfig ? [unit.effectConfig] : [{ id: unit.effectId }])
+        : unit.activeEffects;
+
+    const targetEffect = effects[index];
+
+    STATE.tempOnConfirm = (newConfig) => {
+        if (STATE.editingUnit.isTerrain) {
+            unit.effectConfig = newConfig;
+            unit.effectId = newConfig.id;
+        } else {
+            unit.activeEffects[index] = { ...unit.activeEffects[index], ...newConfig };
+        }
+        addLog(`✅ 已更新状态实例数值`, "amber");
+    };
+
+    pushEditorState(showCreateEffectForm, {
+        isInstance: true,
+        baseEffect: targetEffect
+    });
 }
 
 function removeEffectFromUnit(index) {
@@ -1806,7 +1899,7 @@ function renderCurrentNormalSkills() {
                 </div>
                 <div class="flex gap-1">
                     <button onclick="event.stopImmediatePropagation(); previewSkillInEdit('${skillId}');" class="p-2 text-cyan-400 hover:bg-cyan-400/20 rounded-lg transition-colors">👁️</button>
-                    <button onclick="event.stopImmediatePropagation(); editExistingSkill('${skillId}');" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
+                    <button onclick="event.stopImmediatePropagation(); pushEditorState(editExistingSkill, '${skillId}');" class="p-2 text-amber-400 hover:bg-amber-400/20 rounded-lg transition-colors">✏️</button>
                     <button onclick="event.stopImmediatePropagation(); deleteSkill('${skillId}');" class="p-2 text-rose-400 hover:bg-rose-400/20 rounded-lg transition-colors">🗑️</button>
                 </div>
             </div>`;
@@ -1832,7 +1925,7 @@ function editExistingSkill(skillId) {
     if (!skill) return;
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="bg-amber-900/10 border border-amber-400/20 rounded-2xl p-5 mb-6">
+        <div class="bg-slate-900 border border-amber-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="text-amber-400 text-xs font-bold mb-4 uppercase tracking-widest">编辑技能</div>
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
@@ -1847,40 +1940,45 @@ function editExistingSkill(skillId) {
                 <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" value="${skill.desc}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
                 <div class="flex gap-2">
                     <button onclick="confirmEditSkill('${skillId}')" class="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all">保存</button>
-                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
+                    <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
                 </div>
             </div>
+            <div id="skill-effect-binding-container"></div>
         </div>`;
-    container.innerHTML = html + container.innerHTML;
+    container.innerHTML = html;
     renderSkillEffectBinding(skillId);
 }
 
 function renderSkillEffectBinding(skillId) {
-    const skill = GAME_CONFIG.SKILLS[skillId];
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
     const container = document.createElement("div");
     container.className = "mt-4 pt-4 border-t border-amber-500/20 space-y-4";
     container.innerHTML = `
         <div>
             <div class="text-[10px] font-bold text-rose-500/60 uppercase mb-2">对目标附加</div>
             <div id="skill-target-effects" class="space-y-1 mb-2"></div>
-            <button onclick="showAddEffectToSkillForm('${skillId}', 'target')" class="w-full py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 text-[10px] font-bold rounded-lg border border-rose-500/30 transition-all">+ 绑定给目标</button>
+            <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}pushEditorState(showAddEffectToSkillForm, '${skillId}', 'target')" class="w-full py-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 text-[10px] font-bold rounded-lg border border-rose-500/30 transition-all">+ 绑定给目标</button>
         </div>
         <div>
             <div class="text-[10px] font-bold text-emerald-500/60 uppercase mb-2">对自己附加</div>
             <div id="skill-self-effects" class="space-y-1 mb-2"></div>
-            <button onclick="showAddEffectToSkillForm('${skillId}', 'self')" class="w-full py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/30 transition-all">+ 绑定给自己</button>
+            <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}pushEditorState(showAddEffectToSkillForm, '${skillId}', 'self')" class="w-full py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/30 transition-all">+ 绑定给自己</button>
         </div>
     `;
-    document.querySelector(".bg-amber-900/10 .space-y-4").appendChild(container);
+    document.getElementById("skill-effect-binding-container").appendChild(container);
 
     const targetList = document.getElementById("skill-target-effects");
     const tEffs = skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : []);
     targetList.innerHTML = tEffs.map((eff, idx) => {
         const t = EFFECT_LIBRARY[eff.id];
+        const config = EFFECT_HANDLERS.getConfig(eff);
         return t ? `
             <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
-                <span>${t.emoji} ${t.name} (${eff.duration}T)</span>
-                <button onclick="removeEffectFromSkill('${skillId}', ${idx}, 'target')" class="text-rose-400">✕</button>
+                <span>${config.emoji} ${config.name} (${config.duration}T)</span>
+                <div class="flex gap-2">
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}editSkillEffect('${skillId}', ${idx}, 'target')" class="text-amber-400">✏️</button>
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}removeEffectFromSkill('${skillId}', ${idx}, 'target')" class="text-rose-400">✕</button>
+                </div>
             </div>` : "";
     }).join("");
 
@@ -1888,39 +1986,58 @@ function renderSkillEffectBinding(skillId) {
     const sEffs = skill.selfEffects || [];
     selfList.innerHTML = sEffs.map((eff, idx) => {
         const t = EFFECT_LIBRARY[eff.id];
+        const config = EFFECT_HANDLERS.getConfig(eff);
         return t ? `
             <div class="flex items-center justify-between bg-black/20 p-2 rounded-lg text-[10px]">
-                <span>${t.emoji} ${t.name} (${eff.duration}T)</span>
-                <button onclick="removeEffectFromSkill('${skillId}', ${idx}, 'self')" class="text-rose-400">✕</button>
+                <span>${config.emoji} ${config.name} (${config.duration}T)</span>
+                <div class="flex gap-2">
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}editSkillEffect('${skillId}', ${idx}, 'self')" class="text-amber-400">✏️</button>
+                    <button onclick="${skillId === 'temp' ? 'syncTempSkill(); ' : ''}removeEffectFromSkill('${skillId}', ${idx}, 'self')" class="text-rose-400">✕</button>
+                </div>
             </div>` : "";
     }).join("");
 }
 
 function showAddEffectToSkillForm(skillId, type) {
     STATE.editingSkillId = skillId;
-    const listId = type === 'target' ? 'skill-target-effects' : 'skill-self-effects';
-    const list = document.getElementById(listId);
+    const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="p-3 bg-slate-800 rounded-xl space-y-3 mb-3 border border-amber-500/30">
+        <div class="bg-slate-900 border border-amber-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="flex justify-between items-center">
-                <span class="text-[9px] text-amber-300 font-bold">选择状态</span>
-                <button onclick="showCreateEffectForm(true)" class="text-[8px] px-1.5 py-0.5 bg-amber-600 text-white rounded">库里没有？去新建</button>
+                <span class="text-amber-300 font-bold uppercase tracking-widest text-sm">选择状态</span>
+                <button onclick="pushEditorState(showCreateEffectForm, true)" class="text-[10px] px-2 py-1 bg-amber-600 text-white rounded-lg">新建状态库条目</button>
             </div>
-            <select id="new-skill-eff-id-${type}" class="editor-input w-full px-2 py-1 rounded text-[10px]">
+            <select id="new-skill-eff-id-${type}" class="editor-input w-full px-4 py-3 rounded-xl text-xs">
                 ${Object.keys(EFFECT_LIBRARY).map(id => `<option value="${id}">${EFFECT_LIBRARY[id].emoji} ${EFFECT_LIBRARY[id].name}</option>`).join("")}
             </select>
-            <input id="new-skill-eff-dur-${type}" type="number" value="3" class="editor-input w-full px-2 py-1 rounded text-[10px]" placeholder="持续回合">
+            <input id="new-skill-eff-dur-${type}" type="number" value="3" class="editor-input w-full px-4 py-3 rounded-xl text-xs" placeholder="持续回合">
             <div class="flex gap-2">
-                <button onclick="confirmBindEffectToSkill('${skillId}', '${type}')" class="flex-1 py-1 bg-amber-600 text-white text-[10px] font-bold rounded">确定</button>
-                <button onclick="editExistingSkill('${skillId}')" class="flex-1 py-1 bg-slate-700 text-slate-300 text-[10px] font-bold rounded">取消</button>
+                <button onclick="confirmBindEffectToSkill('${skillId}', '${type}')" class="flex-1 py-3 bg-amber-600 text-white text-xs font-bold rounded-xl">确定</button>
+                <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl">取消</button>
             </div>
         </div>
     `;
-    list.insertAdjacentHTML('beforebegin', html);
+    container.innerHTML = html;
+}
+
+function editSkillEffect(skillId, index, type) {
+    const skill = GAME_CONFIG.SKILLS[skillId];
+    const effects = (type === 'target') ? (skill.targetEffects || []) : (skill.selfEffects || []);
+    const targetEffect = effects[index];
+
+    STATE.tempOnConfirm = (newConfig) => {
+        effects[index] = { ...effects[index], ...newConfig };
+        addLog(`✅ 已更新技能状态实例数值`, "amber");
+    };
+
+    pushEditorState(showCreateEffectForm, {
+        isInstance: true,
+        baseEffect: targetEffect
+    });
 }
 
 function confirmBindEffectToSkill(skillId, type) {
-    const skill = GAME_CONFIG.SKILLS[skillId];
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
     const id = document.getElementById(`new-skill-eff-id-${type}`).value;
     const duration = parseInt(document.getElementById(`new-skill-eff-dur-${type}`).value) || 3;
 
@@ -1934,75 +2051,102 @@ function confirmBindEffectToSkill(skillId, type) {
     }
 
     addLog(`✅ 技能「${skill.name}」已添加状态`, "amber");
-    editExistingSkill(skillId);
+    popEditorState();
 }
 
 function removeEffectFromSkill(skillId, index, type) {
-    const skill = GAME_CONFIG.SKILLS[skillId];
+    const skill = skillId === 'temp' ? STATE.tempNewSkill : GAME_CONFIG.SKILLS[skillId];
     if (type === 'target') {
         if (skill.targetEffects) skill.targetEffects.splice(index, 1);
         else if (skill.effectId) skill.effectId = null;
     } else {
         if (skill.selfEffects) skill.selfEffects.splice(index, 1);
     }
-    editExistingSkill(skillId);
+
+    if (skillId === 'temp') showAddSkillForm(false);
+    else renderSkillEffectBinding(skillId);
 }
 
 function confirmEditSkill(skillId) {
     const skill = GAME_CONFIG.SKILLS[skillId];
-    skill.emoji = document.getElementById("new-skill-emoji").value || skill.emoji;
-    skill.name = document.getElementById("new-skill-name").value || skill.name;
-    skill.manaCost = parseInt(document.getElementById("new-skill-cost").value) || skill.manaCost;
-    skill.range = parseInt(document.getElementById("new-skill-range").value) || skill.range;
-    skill.damage = parseInt(document.getElementById("new-skill-dmg").value) || skill.damage;
-    skill.desc = document.getElementById("new-skill-desc").value || skill.desc;
+    skill.emoji = document.getElementById("new-skill-emoji").value;
+    skill.name = document.getElementById("new-skill-name").value;
+    skill.manaCost = parseInt(document.getElementById("new-skill-cost").value);
+    skill.range = parseInt(document.getElementById("new-skill-range").value);
+    skill.damage = parseInt(document.getElementById("new-skill-dmg").value);
+    skill.desc = document.getElementById("new-skill-desc").value;
 
     addLog(`✅ 技能「${skill.name}」已更新`, "amber");
-    renderEditForm();
+    popEditorState();
 }
 
-function showAddSkillForm() {
+function showAddSkillForm(isInit = true) {
+    if (isInit && !STATE.tempNewSkill) {
+        STATE.tempNewSkill = {
+            emoji: "✨",
+            name: "新技能",
+            manaCost: 4,
+            range: 2,
+            damage: 12,
+            desc: "",
+            targetEffects: [],
+            selfEffects: []
+        };
+    }
+
+    const s = STATE.tempNewSkill;
     const container = document.getElementById("edit-unit-form");
     const html = `
-        <div class="bg-purple-900/10 border border-purple-400/20 rounded-2xl p-5 mb-6">
+        <div class="bg-slate-900 border border-purple-500/30 rounded-[32px] p-6 space-y-6 shadow-2xl">
             <div class="text-purple-400 text-xs font-bold mb-4 uppercase tracking-widest">新增独立技能</div>
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">图标</label><input id="new-skill-emoji" placeholder="✨" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl"></div>
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">名称</label><input id="new-skill-name" placeholder="技能名" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">图标</label><input id="new-skill-emoji" value="${s.emoji}" class="editor-input w-full px-4 py-2 rounded-xl text-center text-xl"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">名称</label><input id="new-skill-name" value="${s.name}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝耗</label><input id="new-skill-cost" type="number" value="4" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">范围</label><input id="new-skill-range" type="number" value="2" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
-                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">伤害</label><input id="new-skill-dmg" type="number" value="12" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">蓝耗</label><input id="new-skill-cost" type="number" value="${s.manaCost}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">范围</label><input id="new-skill-range" type="number" value="${s.range}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
+                    <div><label class="block text-[10px] font-bold text-slate-500 mb-1">伤害</label><input id="new-skill-dmg" type="number" value="${s.damage}" class="editor-input w-full px-4 py-2 rounded-xl text-center font-mono"></div>
                 </div>
-                <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" placeholder="简短描述该技能的效果" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+                <div><label class="block text-[10px] font-bold text-slate-500 mb-1">技能描述</label><input id="new-skill-desc" value="${s.desc}" class="editor-input w-full px-4 py-2 rounded-xl"></div>
+
+                <div id="skill-effect-binding-container"></div>
+
                 <div class="flex gap-2">
                     <button onclick="confirmAddSkill()" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-all">确认新增</button>
-                    <button onclick="renderEditForm()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
+                    <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-all">取消</button>
                 </div>
             </div>
         </div>`;
-    container.innerHTML = html + container.innerHTML;
+    container.innerHTML = html;
+    renderSkillEffectBinding('temp');
+}
+
+function syncTempSkill() {
+    const s = STATE.tempNewSkill;
+    s.emoji = document.getElementById("new-skill-emoji").value;
+    s.name = document.getElementById("new-skill-name").value;
+    s.manaCost = parseInt(document.getElementById("new-skill-cost").value);
+    s.range = parseInt(document.getElementById("new-skill-range").value);
+    s.damage = parseInt(document.getElementById("new-skill-dmg").value);
+    s.desc = document.getElementById("new-skill-desc").value;
 }
 
 function confirmAddSkill() {
-    const emoji = document.getElementById("new-skill-emoji").value || "✨";
-    const name = document.getElementById("new-skill-name").value || "新技能";
-    const manaCost = parseInt(document.getElementById("new-skill-cost").value) || 4;
-    const range = parseInt(document.getElementById("new-skill-range").value) || 2;
-    const damage = parseInt(document.getElementById("new-skill-dmg").value) || 12;
-    const desc = document.getElementById("new-skill-desc").value || "";
+    syncTempSkill();
+    const s = STATE.tempNewSkill;
+    const { emoji, name, manaCost, range, damage, desc, targetEffects, selfEffects } = s;
 
     const skillId = "custom_" + Date.now();
-    GAME_CONFIG.SKILLS[skillId] = { emoji, name, manaCost, range, damage, desc };
+    GAME_CONFIG.SKILLS[skillId] = { emoji, name, manaCost, range, damage, desc, targetEffects, selfEffects };
 
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
     if (!unit.normalSkills) unit.normalSkills = [];
     unit.normalSkills.push(skillId);
 
     addLog(`✅ 新技能已独立添加到单位：${emoji} ${name}`, "purple");
-    renderEditForm();
+    popEditorState();
 }
 
 function saveCurrentEdit() {
@@ -2127,12 +2271,25 @@ function updateSelectedPanel() {
     document.getElementById("selected-emoji").innerHTML = entity.emoji;
     document.getElementById("selected-name").textContent = entity.name;
 
+    const effectsContainer = document.getElementById("active-effects-list");
+    effectsContainer.innerHTML = "";
+
     if (isTerrain) {
         document.getElementById("selected-team").innerHTML = `<span class="bg-slate-500/30 text-slate-300 border border-slate-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">地形</span>`;
         document.getElementById("unit-stats").classList.add("hidden");
         document.getElementById("skill-selection").classList.add("hidden");
         document.getElementById("terrain-desc").classList.remove("hidden");
         document.getElementById("terrain-desc-text").innerHTML = entity.desc || "无特殊描述";
+
+        // 地形特有状态 (它赋予的状态)
+        if (entity.effectId) {
+            const config = EFFECT_HANDLERS.getConfig(entity.effectConfig || { id: entity.effectId });
+            const div = document.createElement("div");
+            div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 cursor-pointer hover:brightness-125 transition-all`;
+            div.innerHTML = `<span class="opacity-60 text-[8px] border border-indigo-500/50 px-1 rounded">${entity.effectIsTrigger ? '触发' : '固有'}</span> ${config.emoji} ${config.name}`;
+            div.onclick = (e) => showStatusDetail(e, entity.effectConfig || { id: entity.effectId }, true);
+            effectsContainer.appendChild(div);
+        }
     } else {
         document.getElementById("selected-team").innerHTML = isFriendly
             ? `<span class="bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">友方单位</span>`
@@ -2180,38 +2337,39 @@ function updateSelectedPanel() {
             <span class="text-cyan-400">${entity.currentMana}</span> <span class="text-xs opacity-30">/</span> <span class="opacity-60">${entity.maxMana}</span>`;
 
         const skillDiv = document.getElementById("skill-selection");
-        const skillsList = document.getElementById("skills-list");
-        const titleEl = document.getElementById("skill-title");
+    }
 
-        const effectsContainer = document.getElementById("active-effects-list");
-        effectsContainer.innerHTML = "";
+    // 统一处理光环和活动效果 (战斗单位和地形都可能被影响)
+    const auras = EFFECT_HANDLERS.calculateAurasForUnit(entity);
+    const hasEffects = (entity.activeEffects && entity.activeEffects.length > 0) || auras.length > 0 || (isTerrain && entity.effectId);
 
-        const auras = EFFECT_HANDLERS.calculateAurasForUnit(entity);
-        const hasEffects = (entity.activeEffects && entity.activeEffects.length > 0) || auras.length > 0;
+    if (hasEffects) {
+        // 普通状态
+        entity.activeEffects?.forEach(eff => {
+            const config = EFFECT_HANDLERS.getConfig(eff);
+            const div = document.createElement("div");
+            div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${config.color}-500/20 text-${config.color}-300 border border-${config.color}-500/30 cursor-pointer hover:brightness-125 transition-all`;
+            div.innerHTML = `${config.emoji} ${config.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
+            div.onclick = (e) => showStatusDetail(e, eff);
+            effectsContainer.appendChild(div);
+        });
+        // 光环状态
+        auras.forEach(aura => {
+            // 如果地形选中了自己，且显示了固有状态，则跳过重复的光环显示
+            if (isTerrain && aura.id === entity.effectId) return;
 
-        if (hasEffects) {
-            // 普通状态
-            entity.activeEffects?.forEach(eff => {
-                const template = EFFECT_LIBRARY[eff.id];
-                if (!template) return;
-                const div = document.createElement("div");
-                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-${template.color}-500/20 text-${template.color}-300 border border-${template.color}-500/30 cursor-pointer hover:brightness-125 transition-all`;
-                div.innerHTML = `${template.emoji} ${template.name} <span class="opacity-50">(${eff.remainingTurns}T)</span>`;
-                div.onclick = (e) => showStatusDetail(e, eff);
-                effectsContainer.appendChild(div);
-            });
-            // 光环状态
-            auras.forEach(aura => {
-                const div = document.createElement("div");
-                div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 cursor-pointer hover:brightness-125 transition-all`;
-                div.innerHTML = `${aura.icon} ${aura.sourceName} 的光环`;
-                div.onclick = (e) => showStatusDetail(e, aura, true);
-                effectsContainer.appendChild(div);
-            });
-        } else {
-            effectsContainer.innerHTML = `<span class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">无活动效果</span>`;
-        }
+            const div = document.createElement("div");
+            div.className = `px-3 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 cursor-pointer hover:brightness-125 transition-all`;
+            div.innerHTML = `${aura.icon} ${aura.sourceName} 的光环`;
+            div.onclick = (e) => showStatusDetail(e, aura, true);
+            effectsContainer.appendChild(div);
+        });
+    } else {
+        effectsContainer.innerHTML = `<span class="text-slate-600 text-[10px] font-bold uppercase tracking-widest">无活动效果</span>`;
+    }
 
+    if (!isTerrain) {
+        const skillDiv = document.getElementById("skill-selection");
         skillDiv.classList.remove("hidden");
         skillsList.innerHTML = "";
 
@@ -2236,13 +2394,19 @@ function updateSelectedPanel() {
             if (tEffs.length > 0) {
                 extraDesc += `<div class="mt-2 flex flex-wrap gap-1">
                     <span class="text-[8px] bg-rose-500/20 text-rose-300 px-1 rounded">对目标:</span>
-                    ${tEffs.map(e => `<span class="status-tag" data-eff-id="${e.id}">${EFFECT_LIBRARY[e.id]?.emoji || ""} ${EFFECT_LIBRARY[e.id]?.name || ""}</span>`).join("")}
+            ${tEffs.map((e, idx) => {
+                const config = EFFECT_HANDLERS.getConfig(e);
+                return `<span class="status-tag" data-skill-id="${skillId}" data-eff-idx="${idx}" data-eff-type="target">${config.emoji} ${config.name}</span>`;
+            }).join("")}
                 </div>`;
             }
             if (sEffs.length > 0) {
                 extraDesc += `<div class="mt-1 flex flex-wrap gap-1">
                     <span class="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 rounded">对自己:</span>
-                    ${sEffs.map(e => `<span class="status-tag" data-eff-id="${e.id}">${EFFECT_LIBRARY[e.id]?.emoji || ""} ${EFFECT_LIBRARY[e.id]?.name || ""}</span>`).join("")}
+            ${sEffs.map((e, idx) => {
+                const config = EFFECT_HANDLERS.getConfig(e);
+                return `<span class="status-tag" data-skill-id="${skillId}" data-eff-idx="${idx}" data-eff-type="self">${config.emoji} ${config.name}</span>`;
+            }).join("")}
                 </div>`;
             }
 
@@ -2263,8 +2427,13 @@ function updateSelectedPanel() {
             btn.querySelectorAll(".status-tag").forEach(tag => {
                 tag.onclick = (e) => {
                     e.stopPropagation();
-                    const effId = tag.dataset.effId;
-                    showStatusDetail(e, { id: effId, remainingTurns: EFFECT_LIBRARY[effId]?.duration || 0 });
+            const sid = tag.dataset.skillId;
+            const idx = parseInt(tag.dataset.effIdx);
+            const type = tag.dataset.effType;
+            const skill = GAME_CONFIG.SKILLS[sid];
+            const effs = type === 'target' ? (skill.targetEffects || (skill.effectId ? [{id: skill.effectId, duration: skill.effectDuration}] : [])) : (skill.selfEffects || []);
+            const effect = effs[idx];
+            showStatusDetail(e, effect);
                 };
             });
 
@@ -2418,21 +2587,20 @@ function showStatDetail(event, unit, statName, statLabel) {
 }
 
 function showStatusDetail(event, eff, isAura = false) {
-    const template = EFFECT_LIBRARY[eff.id];
-    if (!template) return;
+    const config = EFFECT_HANDLERS.getConfig(eff);
 
     let content = `
         <div class="space-y-2">
             <div class="flex items-center gap-2 border-b border-white/10 pb-2">
-                <span class="text-2xl">${template.emoji}</span>
+                <span class="text-2xl">${config.emoji}</span>
                 <div>
-                    <div class="font-bold text-sm text-${template.color}-400">${template.name}</div>
+                    <div class="font-bold text-sm text-${config.color}-400">${config.name}</div>
                     <div class="text-[9px] text-slate-500 uppercase tracking-widest">
                         ${isAura ? `光环来自: ${eff.sourceName}` : `持续: ${eff.remainingTurns} 回合`}
                     </div>
                 </div>
             </div>
-            <p class="text-[11px] text-slate-300 leading-relaxed">${template.desc}</p>
+            <p class="text-[11px] text-slate-300 leading-relaxed">${config.desc}</p>
             ${eff.stacks > 1 ? `<div class="text-[10px] text-amber-400 font-bold">当前叠加: ${eff.stacks} 层</div>` : ''}
         </div>`;
 
