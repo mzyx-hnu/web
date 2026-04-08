@@ -2522,6 +2522,9 @@ function updateSelectedPanel() {
 
     if (!isTerrain) {
         const skillDiv = document.getElementById("skill-selection");
+        const skillsList = document.getElementById("skills-list");
+        const titleEl = document.getElementById("skill-title");
+
         skillDiv.classList.remove("hidden");
         skillsList.innerHTML = "";
 
