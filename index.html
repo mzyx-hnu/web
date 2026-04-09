@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>10×10 战棋模拟器 (火焰纹章 Lite • 地形版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center bg-[url('https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center bg-no-repeat bg-fixed overflow-hidden">
+
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-[3px] z-0"></div>
+
+    <!-- 顶部状态浮窗 -->
+    <div id="top-status" class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
+        <div id="turn-display" class="px-8 py-2 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-x-4 shadow-2xl pointer-events-auto transition-all">
+            <span id="turn-team" class="turn-indicator font-bold text-lg">🟦 玩家回合</span>
+            <div class="w-px h-6 bg-white/20"></div>
+            <span id="turn-number" class="font-mono text-2xl text-white">01</span>
+        </div>
+        <div id="phase-text" class="mt-2 text-[10px] text-emerald-300 tracking-widest uppercase opacity-80 drop-shadow-md">多次移动 + 攻击/技能1次 • 平滑动画</div>
+    </div>
+
+    <!-- 游戏主容器（仅保留棋盘，其它全浮动） -->
+    <div id="game-container" class="relative z-10 w-full h-full flex items-center justify-center p-4">
+        <div id="board-container" class="relative w-full max-w-[min(85vw,85vh,660px)] aspect-square">
+            <div id="board" class="grid grid-cols-10 gap-px bg-slate-700/60 p-2 sm:p-3 rounded-2xl sm:rounded-3xl shadow-2xl border border-white/10 w-full h-full backdrop-blur-sm">
+            </div>
+            <div id="animation-overlay" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+        </div>
+    </div>
+
+    <!-- 右下角浮动按钮组 -->
+    <div class="fixed bottom-6 right-6 z-[70] flex flex-col gap-3">
+        <button onclick="endPlayerTurn()" id="end-turn-btn" class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center group active:scale-95">
+            <span class="text-2xl sm:text-3xl group-hover:translate-x-1 transition-transform">⏭️</span>
+            <span class="text-[10px] font-bold mt-1">结束回合</span>
+        </button>
+        <button onclick="resetGame()" class="w-16 h-16 sm:w-20 sm:h-20 bg-slate-800/90 hover:bg-slate-700 backdrop-blur-md border border-white/10 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center active:scale-95">
+            <span class="text-xl sm:text-2xl">🔄</span>
+            <span class="text-[10px] font-bold mt-1 text-slate-400">重开</span>
+        </button>
+        <button onclick="toggleMenu('side-menu')" class="w-16 h-16 sm:w-20 sm:h-20 bg-slate-800/90 hover:bg-slate-700 backdrop-blur-md border border-white/10 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center active:scale-95">
+            <span class="text-xl sm:text-2xl">⚙️</span>
+            <span class="text-[10px] font-bold mt-1 text-slate-400">功能</span>
+        </button>
+    </div>
+
+    <!-- 左侧辅助功能面板 (默认隐藏) -->
+    <div id="side-menu" class="fixed inset-y-0 left-0 w-full sm:w-80 z-[60] glass-panel transition-transform -translate-x-full overflow-hidden flex flex-col">
+        <div class="p-6 border-b border-white/10 flex justify-between items-center bg-slate-900/40">
+            <h2 class="text-xl font-bold text-emerald-400">游戏设置 & 信息</h2>
+            <button onclick="toggleMenu('side-menu')" class="text-2xl text-slate-400 hover:text-white">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6 space-y-8 custom-scroll">
+            <!-- 规则 -->
+            <section>
+                <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-4">游戏规则</h3>
+                <div class="text-slate-300 text-xs leading-relaxed space-y-2">
+                    <p>• 友方可多次移动，攻击/技能仅1次</p>
+                    <p class="text-amber-300">• ⛰️：不可进入；🌊：限移1格</p>
+                    <p class="text-amber-300">• 🌲：移动/攻击-1，限相邻攻击内部</p>
+                    <p class="text-cyan-400">• 不使用技能结束回合 +2 蓝量</p>
+                </div>
+            </section>
+            <!-- 列表 -->
+            <section>
+                <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3">友方单位</h3>
+                <div id="friendly-list" class="space-y-2"></div>
+                <h3 class="text-xs font-bold text-rose-400 uppercase tracking-widest mt-6 mb-3">敌方单位</h3>
+                <div id="enemy-list" class="space-y-2"></div>
+            </section>
+            <!-- 存档 -->
+            <section class="pt-6 border-t border-white/10">
+                <h3 class="text-xs font-bold text-purple-400 uppercase tracking-widest mb-4">棋盘存档</h3>
+                <div class="flex flex-col gap-2">
+                    <button onclick="exportBoard()" class="py-3 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2">📤 导出 (YAML)</button>
+                    <button onclick="document.getElementById('import-input').click()" class="py-3 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2">📥 导入 (YAML)</button>
+                    <input type="file" id="import-input" accept=".yaml" class="hidden" onchange="handleImport(event)">
+                </div>
+            </section>
+            <!-- 编辑模式 -->
+            <button onclick="toggleEditMode(); toggleMenu('side-menu');" id="edit-mode-btn" class="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
+                <span id="edit-icon">🛠️</span><span id="edit-text">进入编辑模式</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 战斗日志面板 -->
+    <div id="log-panel" class="fixed bottom-6 left-6 z-40 w-72 sm:w-80 group">
+        <div class="glass-panel rounded-3xl overflow-hidden transition-all duration-300 max-h-12 group-hover:max-h-64 flex flex-col">
+            <div class="px-5 py-3 border-b border-white/10 flex justify-between items-center bg-slate-900/60 cursor-pointer">
+                <div class="flex items-center gap-2">
+                    <span class="text-rose-400">📜</span>
+                    <span class="text-xs font-bold uppercase tracking-widest text-slate-300">战斗日志</span>
+                    <span id="log-turn" class="ml-2 font-mono text-[10px] bg-slate-700 px-2 py-0.5 rounded text-white">1</span>
+                </div>
+                <span class="text-[10px] text-slate-500 transition-transform group-hover:rotate-180">▲</span>
+            </div>
+            <div id="log-container" class="flex-1 overflow-y-auto p-4 text-[11px] text-slate-300 space-y-2 custom-scroll min-h-0 bg-slate-900/40"></div>
+        </div>
+    </div>
+
+    <!-- 选中单位信息面板 (浮动自适应) -->
+    <!-- 桌面端: 右侧 | 移动端: 底部 -->
+    <div id="info-panel-wrapper" class="fixed inset-x-0 bottom-0 sm:inset-y-0 sm:right-0 sm:left-auto sm:w-96 z-50 pointer-events-none transition-transform translate-y-full sm:translate-y-0 sm:translate-x-full">
+        <div id="info-panel-content" class="pointer-events-auto h-[70vh] sm:h-full glass-panel sm:rounded-none sm:border-l sm:border-t-0 rounded-t-[40px] flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
+            <div class="h-1.5 w-12 bg-white/20 rounded-full mx-auto mt-4 mb-2 sm:hidden"></div>
+
+            <div class="flex-1 overflow-y-auto p-6 sm:p-8 custom-scroll">
+                <div id="selected-panel" class="hidden">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-4">
+                            <div id="selected-emoji" class="text-6xl drop-shadow-2xl"></div>
+                            <div>
+                                <div id="selected-name" class="font-black text-2xl tracking-tight"></div>
+                                <div id="selected-team" class="mt-1"></div>
+                            </div>
+                        </div>
+                        <button onclick="deselectUnit()" class="p-2 hover:bg-white/10 rounded-full transition-colors">✕</button>
+                    </div>
+
+                    <div id="unit-stats" class="bg-slate-900/60 rounded-[32px] p-6 space-y-6 border border-white/5">
+                        <div class="relative pt-2">
+                            <div class="flex justify-between text-xs font-bold mb-2 text-slate-400">
+                                <span class="uppercase tracking-widest">生命值 HP</span>
+                                <span id="selected-hp-text" class="font-mono text-white"></span>
+                            </div>
+                            <div class="hp-bar h-3">
+                                <div id="selected-hp-fill" class="hp-fill"></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
+                                <div class="text-[10px] font-bold text-amber-300 uppercase mb-1">⚔️ 攻击力</div>
+                                <div id="selected-atk" class="font-mono text-2xl font-black text-white"></div>
+                            </div>
+                            <div class="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
+                                <div class="text-[10px] font-bold text-sky-300 uppercase mb-1">🛡️ 防御力</div>
+                                <div id="selected-def" class="font-mono text-2xl font-black text-white"></div>
+                            </div>
+                            <div class="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
+                                <div class="text-[10px] font-bold text-emerald-300 uppercase mb-1">🚶 剩余移动</div>
+                                <div id="selected-remaining-move" class="font-mono text-2xl font-black text-white"></div>
+                            </div>
+                            <div class="bg-slate-800/40 p-4 rounded-2xl border border-white/5">
+                                <div class="text-[10px] font-bold text-rose-300 uppercase mb-1">🎯 攻击范围</div>
+                                <div id="selected-range" class="font-mono text-2xl font-black text-white"></div>
+                            </div>
+                        </div>
+
+                        <div class="bg-cyan-900/20 p-4 rounded-2xl border border-cyan-500/20">
+                            <div class="text-[10px] font-bold text-cyan-300 uppercase mb-1">🔵 蓝量 MANA</div>
+                            <div id="selected-mana" class="font-mono text-2xl font-black text-white"></div>
+                        </div>
+
+                    </div>
+
+                    <div id="active-effects-container" class="pt-6 border-t border-white/5 mt-4">
+                        <div class="text-[10px] font-bold uppercase tracking-widest text-purple-300 mb-3 opacity-60">当前效果 / 属性</div>
+                        <div id="active-effects-list" class="flex flex-wrap gap-2 min-h-[32px]"></div>
+                    </div>
+
+                    <div id="skill-selection" class="hidden bg-slate-900/60 rounded-[32px] p-6 mt-6 border border-white/5">
+                        <div id="skill-title" class="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2"></div>
+                        <div id="skills-list" class="flex flex-col gap-3"></div>
+                    </div>
+
+                    <div id="terrain-desc" class="hidden bg-slate-900/60 rounded-[32px] p-6 border border-white/5">
+                        <p id="terrain-desc-text" class="text-slate-300 leading-relaxed"></p>
+                        <div class="text-[10px] text-slate-500 mt-4 pt-4 border-t border-white/10 uppercase tracking-widest">地形单位 • 不可攻击</div>
+                    </div>
+                </div>
+
+                <div id="editor-panel" class="hidden flex-1 flex flex-col">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="text-purple-400 font-black text-2xl flex items-center gap-2"><span>🛠️</span> 编辑器</div>
+                        <button onclick="exitEditMode()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold transition-colors">退出</button>
+                    </div>
+                    <div id="edit-unit-form" class="space-y-6"></div>
+                    <div class="mt-8 flex gap-3">
+                        <button onclick="addNewUnitAtSelectedCell()" id="add-unit-btn" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-black hidden transition-all active:scale-95">+ 新增单位</button>
+                        <button onclick="copySelectedUnit()" id="copy-unit-btn" class="flex-1 py-4 bg-amber-600 hover:bg-amber-500 rounded-2xl text-sm font-black hidden transition-all active:scale-95">复制单位</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 结果弹窗 -->
+    <!-- 通用气泡浮窗 (Tooltip) -->
+    <div id="tooltip" class="fixed hidden z-[110] glass-panel p-4 rounded-[24px] shadow-2xl border border-white/20 max-w-[280px] pointer-events-auto transition-all duration-200 opacity-0 scale-95 origin-top"></div>
+
+    <div id="result-modal" onclick="if(event.target.id==='result-modal')hideModal()" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-xl p-6">
+        <div class="glass-panel max-w-sm w-full rounded-[48px] p-10 text-center border-white/10">
+            <div id="result-icon" class="text-8xl mb-8 animate-bounce"></div>
+            <h2 id="result-title" class="text-4xl font-black mb-4 tracking-tight"></h2>
+            <p id="result-text" class="text-slate-400 mb-10 leading-relaxed"></p>
+            <div class="flex flex-col gap-3">
+                <button onclick="hideModal(); resetGame()" class="py-5 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-black rounded-3xl shadow-xl shadow-emerald-500/20 transition-all active:scale-95">再来一局</button>
+                <button onclick="hideModal()" class="py-4 text-slate-500 font-bold hover:text-white transition-colors">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
