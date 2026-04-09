@@ -261,13 +261,28 @@ body {
 
 /* 响应式调整 */
 @media (max-width: 640px) {
+    body {
+        justify-content: flex-start !important;
+        align-items: center !important;
+    }
+
     #game-container {
-        align-items: flex-start;
-        padding-top: 80px; /* 减小顶部空间 */
+        height: 50vh !important;
+        width: 100% !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: center !important;
+        padding-top: 11vh !important; /* 使用 vh 确保在各种高度下比例一致，避开状态栏 */
+        flex-shrink: 0 !important;
+        position: relative !important;
+        z-index: 10 !important;
+        overflow: visible !important;
     }
 
     #board-container {
-        max-width: min(90vw, 32vh); /* 再次限制高度，确保完全不被遮挡 */
+        max-width: min(90vw, 32vh) !important; /* 限制高度在 ~32vh，留出 padding-top 后的剩余空间 */
+        margin: 0 auto !important;
+        aspect-ratio: 1/1 !important;
     }
 
     #info-panel-wrapper.translate-y-full {
