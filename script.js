@@ -4,10 +4,10 @@
  */
 export const GAME_CONFIG = {
     UNIT_TYPES: {
-        knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, normalSkills: ["vampiricStrike", "shieldBash"], ultSkill: "commanderAura", isTerrain: false },
-        archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, normalSkills: ["precisionShot", "plagueBolt"], ultSkill: "ultimateStrike", isTerrain: false },
-        heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, mana: 8, normalSkills: ["shieldBash", "doubleStrike"], ultSkill: "ultimateStrike", isTerrain: false },
-        mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, mana: 15, normalSkills: ["arcaneBlast", "precisionShot"], ultSkill: "ultimateStrike", isTerrain: false },
+        knight:  { emoji: "⚔️", name: "骑士", hp: 22, atk: 9, def: 4, moveRange: 4, atkRange: 1, mana: 10, skills: ["vampiricStrike", "shieldBash", "commanderAura"], isTerrain: false },
+        archer:  { emoji: "🏹", name: "弓箭手", hp: 16, atk: 8, def: 2, moveRange: 3, atkRange: 2, mana: 12, skills: ["precisionShot", "plagueBolt", "ultimateStrike"], isTerrain: false },
+        heavy:   { emoji: "🛡️", name: "重甲战士", hp: 28, atk: 7, def: 7, moveRange: 2, atkRange: 1, mana: 8, skills: ["shieldBash", "doubleStrike", "ultimateStrike"], isTerrain: false },
+        mage:    { emoji: "🔥", name: "法师", hp: 15, atk: 11, def: 1, moveRange: 3, atkRange: 2, mana: 15, skills: ["arcaneBlast", "precisionShot", "ultimateStrike"], isTerrain: false },
         mountain:{ emoji: "⛰️", name: "山峰", desc: "不可进入", impassable: true, isTerrain: true, temporary: false },
         river:   { emoji: "🌊", name: "河流", desc: "可进入，但穿过之后只能再移动1格", impassable: false, isTerrain: true, temporary: false, effectId: "riverSlow" },
         forest:  { emoji: "🌲", name: "森林", desc: "可进入，进入后移动和攻击范围减1（攻击最低1），外部单位只能相邻攻击森林内单位", impassable: false, isTerrain: true, temporary: false, effectId: "forestBuff" },
@@ -498,7 +498,10 @@ export function tickAllEffects() {
 
 export function getEffectiveAtk(unit) { return unit.atk + EFFECT_HANDLERS.getStatModifier(unit, "atk").total; }
 export function getEffectiveDef(unit) { return unit.def + EFFECT_HANDLERS.getStatModifier(unit, "def").total; }
-export function getEffectiveMoveRange(unit) { return Math.max(0, unit.moveRange + EFFECT_HANDLERS.getStatModifier(unit, "move").total); }
+export function getEffectiveMoveRange(unit) {
+    const base = (unit.remainingMove !== undefined) ? unit.remainingMove : unit.moveRange;
+    return Math.max(0, base + EFFECT_HANDLERS.getStatModifier(unit, "move").total);
+}
 export function getEffectiveAtkRange(unit) { return Math.max(1, unit.atkRange + EFFECT_HANDLERS.getStatModifier(unit, "range").total); }
 
 /**
@@ -765,8 +768,7 @@ export function createCombatUnit(base) {
         mana: template.mana,
         maxMana: template.mana,
         currentMana: template.mana,
-        normalSkills: [...(template.normalSkills || [])],
-        ultSkill: template.ultSkill,
+        skills: [...(template.skills || [])],
         remainingMove: template.moveRange,
         hasAttacked: false,
         forestModifier: false,
@@ -1254,6 +1256,8 @@ function selectUnit(team, id) {
 export function deselectUnit() {
     STATE.selected = null;
     STATE.selectedSkill = null;
+    const overlapSelector = document.getElementById("overlap-selector");
+    if (overlapSelector) overlapSelector.classList.add("hidden");
     renderBoard();
     updateSelectedPanel();
 }
@@ -1295,6 +1299,12 @@ function handleCellClick(row, col) {
     const { combatUnit, combatTeam, terrainUnit } = getCellContent(row, col);
     const sel = STATE.selected;
 
+    // 检查是否有单位重叠
+    if (combatUnit && terrainUnit) {
+        showOverlapSelector(combatUnit, combatTeam, terrainUnit);
+        return;
+    }
+
     if (combatUnit) {
         if (sel && sel.team === combatTeam && sel.id === combatUnit.id) { deselectUnit(); return; }
         if (sel && sel.team === "friendly" && combatTeam === "enemy") {
@@ -1332,6 +1342,48 @@ function handleCellClick(row, col) {
     }
 
     deselectUnit();
+}
+
+function showOverlapSelector(combatUnit, combatTeam, terrainUnit) {
+    const selector = document.getElementById("overlap-selector");
+    const list = document.getElementById("overlap-list");
+    selector.classList.remove("hidden");
+    list.innerHTML = "";
+
+    const btnCombat = document.createElement("button");
+    btnCombat.className = "flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-white/5 transition-all text-left";
+    btnCombat.innerHTML = `
+        <span class="text-3xl">${combatUnit.emoji}</span>
+        <div class="flex-1">
+            <div class="font-bold text-sm">${combatUnit.name}</div>
+            <div class="text-[9px] text-slate-500 uppercase">${combatTeam === "friendly" ? "友方单位" : "敌方单位"}</div>
+        </div>
+    `;
+    btnCombat.onclick = () => {
+        selector.classList.add("hidden");
+        selectUnit(combatTeam, combatUnit.id);
+    };
+
+    const btnTerrain = document.createElement("button");
+    btnTerrain.className = "flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-white/5 transition-all text-left";
+    btnTerrain.innerHTML = `
+        <span class="text-3xl">${terrainUnit.emoji}</span>
+        <div class="flex-1">
+            <div class="font-bold text-sm">${terrainUnit.name}</div>
+            <div class="text-[9px] text-slate-500 uppercase">地形单位</div>
+        </div>
+    `;
+    btnTerrain.onclick = () => {
+        selector.classList.add("hidden");
+        selectUnit("terrain", terrainUnit.id);
+    };
+
+    list.appendChild(btnCombat);
+    list.appendChild(btnTerrain);
+
+    // 自动打开面板
+    toggleInfoPanel(true);
+    document.getElementById("selected-panel").classList.remove("hidden");
 }
 
 /* ====================== 编辑模式核心（支持空格子新增/复制 + 位置移动） ====================== */
@@ -1561,7 +1613,7 @@ function renderEditForm(isBack = false) {
         renderTerrainPresetList(unit);
     }
     // 战斗单位技能列表保持原来逻辑
-    if (!isTerrain && !isPendingAdd && unit) renderCurrentNormalSkills();
+    if (!isTerrain && !isPendingAdd && unit) renderCurrentSkills();
 
     // 【新增】状态绑定显示
     if (!isPendingAdd && unit) renderEffectBindingList(unit);
@@ -2023,11 +2075,11 @@ export function quickSetEmoji(emoji) {
     if (input) input.value = emoji;
 }
 
-function renderCurrentNormalSkills() {
+function renderCurrentSkills() {
     const container = document.getElementById("edit-normal-skills");
     if (!container) return;
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
-    const currentSkills = unit.normalSkills || [];
+    const currentSkills = unit.skills || [];
 
     container.innerHTML = currentSkills.map(skillId => {
         const skill = GAME_CONFIG.SKILLS[skillId];
@@ -2058,7 +2110,7 @@ export function previewSkillInEdit(skillId) {
 
 export function deleteSkill(skillId) {
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
-    unit.normalSkills = unit.normalSkills.filter(s => s !== skillId);
+    unit.skills = unit.skills.filter(s => s !== skillId);
     renderEditForm();
 }
 
@@ -2297,8 +2349,8 @@ export function confirmAddSkill() {
     GAME_CONFIG.SKILLS[skillId] = { emoji, name, manaCost, range, damage, desc, targetEffects, selfEffects };
 
     const unit = getUnit(STATE.editingUnit.team, STATE.editingUnit.id);
-    if (!unit.normalSkills) unit.normalSkills = [];
-    unit.normalSkills.push(skillId);
+    if (!unit.skills) unit.skills = [];
+    unit.skills.push(skillId);
 
     addLog(`✅ 新技能已独立添加到单位：${emoji} ${name}`, "purple");
     popEditorState();
@@ -2319,7 +2371,6 @@ export function saveCurrentEdit() {
         unit.atkRange = parseInt(document.getElementById("edit-atkRange").value) || 0;
         unit.hp = parseInt(document.getElementById("edit-hp").value) || unit.hp;
         if (unit.maxHp) unit.maxHp = unit.hp;
-        unit.ultSkill = document.getElementById("edit-ult-skill").value;
     }
 
     addLog(`✅ 已保存 <span class="text-purple-400">${unit.emoji} ${unit.name}</span> 的独立修改`, "purple");
@@ -2422,6 +2473,8 @@ function updateSelectedPanel() {
         panel.classList.remove("hidden");
         editor.classList.add("hidden");
         toggleInfoPanel(true);
+        // 如果没有正在进行重叠选择，且当前选中了单位，则隐藏选择器（除非就是为了重叠选择打开的）
+        if (STATE.selected) document.getElementById("overlap-selector").classList.add("hidden");
     }
 
     const isTerrain = STATE.selected.team === "terrain";
@@ -2539,7 +2592,7 @@ function updateSelectedPanel() {
             ? `<span class="text-cyan-400">⚡</span> 技能指令`
             : `<span class="text-rose-400">👁️</span> 技能预览`;
 
-        const skillIds = (entity.normalSkills || []).concat(entity.ultSkill ? [entity.ultSkill] : []);
+        const skillIds = entity.skills || [];
 
         skillIds.forEach(skillId => {
             const skill = GAME_CONFIG.SKILLS[skillId];
@@ -2945,7 +2998,7 @@ function enemyTurn() {
         // 技能 / 攻击也检查禁用
         let usedSkill = false;
         if (!EFFECT_HANDLERS.isDisabled(enemy, "skill")) {
-            const possibleSkills = (enemy.normalSkills || []).concat(enemy.ultSkill ? [enemy.ultSkill] : []);
+            const possibleSkills = enemy.skills || [];
             let bestSkill = null, bestDmg = 0;
             for (let sid of possibleSkills) {
                 const sk = GAME_CONFIG.SKILLS[sid];
@@ -3112,6 +3165,8 @@ if (typeof window !== 'undefined') {
         pushEditorState,
         popEditorState,
         syncTempSkill,
+        renderBoard,
+        STATE,
         toggleMenu: (id) => {
             const menu = document.getElementById(id);
             if (menu.classList.contains('-translate-x-full')) {

@@ -13,13 +13,13 @@
     <div class="fixed inset-0 bg-black/80 backdrop-blur-[3px] z-0"></div>
 
     <!-- 顶部状态浮窗 -->
-    <div id="top-status" class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
-        <div id="turn-display" class="px-8 py-2 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-x-4 shadow-2xl pointer-events-auto transition-all">
-            <span id="turn-team" class="turn-indicator font-bold text-lg">🟦 玩家回合</span>
-            <div class="w-px h-6 bg-white/20"></div>
-            <span id="turn-number" class="font-mono text-2xl text-white">01</span>
+    <div id="top-status" class="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
+        <div id="turn-display" class="px-4 py-1 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-x-3 shadow-2xl pointer-events-auto transition-all">
+            <span id="turn-team" class="turn-indicator font-bold text-sm">🟦 玩家回合</span>
+            <div class="w-px h-4 bg-white/20"></div>
+            <span id="turn-number" class="font-mono text-lg text-white">01</span>
         </div>
-        <div id="phase-text" class="mt-2 text-[10px] text-emerald-300 tracking-widest uppercase opacity-80 drop-shadow-md">多次移动 + 攻击/技能1次 • 平滑动画</div>
+        <div id="phase-text" class="mt-1 text-[8px] text-emerald-300 tracking-widest uppercase opacity-80 drop-shadow-md">多次移动 + 攻击/技能1次 • 平滑动画</div>
     </div>
 
     <!-- 游戏主容器（仅保留棋盘，其它全浮动） -->
@@ -156,6 +156,11 @@
                             <div id="selected-mana" class="font-mono text-2xl font-black text-white"></div>
                         </div>
 
+                    </div>
+
+                    <div id="overlap-selector" class="hidden bg-indigo-900/40 border border-indigo-500/30 rounded-[32px] p-4 mb-6">
+                        <div class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-3 text-center">检测到多个单位，请选择：</div>
+                        <div id="overlap-list" class="flex flex-col gap-2"></div>
                     </div>
 
                     <div id="active-effects-container" class="pt-6 border-t border-white/5 mt-4">
