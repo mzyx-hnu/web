@@ -244,6 +244,16 @@ body {
     bottom: 0.5rem !important;
     opacity: 0.6;
 }
+
+@media (max-width: 640px) {
+    .buttons-collapsed {
+        bottom: 52vh !important;
+        right: 1rem !important;
+        opacity: 0.9;
+        transform: scale(0.8);
+    }
+}
+
 .buttons-collapsed:hover {
     opacity: 1;
     transform: scale(0.9);
@@ -251,11 +261,111 @@ body {
 
 /* 响应式调整 */
 @media (max-width: 640px) {
+    body {
+        justify-content: flex-start !important;
+        align-items: center !important;
+    }
+
+    #game-container {
+        height: 50vh !important;
+        width: 100% !important;
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: center !important;
+        padding-top: 11vh !important; /* 使用 vh 确保在各种高度下比例一致，避开状态栏 */
+        flex-shrink: 0 !important;
+        position: relative !important;
+        z-index: 10 !important;
+        overflow: visible !important;
+    }
+
+    #board-container {
+        max-width: min(90vw, 32vh) !important; /* 限制高度在 ~32vh，留出 padding-top 后的剩余空间 */
+        margin: 0 auto !important;
+        aspect-ratio: 1/1 !important;
+    }
+
     #info-panel-wrapper.translate-y-full {
         transform: translateY(100%);
     }
     #info-panel-wrapper.translate-y-0 {
         transform: translateY(0);
+        z-index: 100; /* 提升层级，确保在其他面板之上 */
+    }
+
+    #side-menu {
+        z-index: 110; /* 侧边菜单层级更高 */
+    }
+
+    /* 移动端紧凑样式 */
+    #info-panel-content .p-6 {
+        padding: 1rem 1.25rem;
+    }
+
+    #selected-emoji {
+        font-size: 3rem;
+    }
+
+    #selected-name {
+        font-size: 1.25rem;
+    }
+
+    #unit-stats {
+        padding: 0.6rem;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.4rem !important;
+    }
+
+    #unit-stats > div:first-child {
+        grid-column: span 2;
+        margin: 0 !important;
+    }
+
+    #unit-stats .grid-cols-2 {
+        display: contents;
+    }
+
+    #unit-stats .bg-slate-800\/40 {
+        padding: 0.4rem 0.6rem;
+    }
+
+    #unit-stats .text-2xl {
+        font-size: 1rem;
+    }
+
+    #unit-stats .bg-cyan-900\/20 {
+        grid-column: span 2;
+        padding: 0.4rem 0.6rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    #unit-stats .bg-cyan-900\/20 .text-2xl {
+        font-size: 1.1rem;
+    }
+
+    #unit-stats .mb-2 {
+        margin-bottom: 0.25rem !important;
+    }
+
+    #active-effects-container {
+        padding-top: 0.75rem;
+        margin-top: 0.5rem;
+    }
+
+    #skill-selection {
+        padding: 1rem;
+        margin-top: 0.75rem;
+    }
+
+    #skills-list .px-5 {
+        padding: 0.75rem 1rem;
+    }
+
+    #skills-list .text-4xl {
+        font-size: 2rem;
     }
 }
 
