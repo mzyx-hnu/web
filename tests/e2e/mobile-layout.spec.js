@@ -24,7 +24,8 @@ test('check board position on mobile', async ({ page }) => {
     }
 
     // Now open the info panel
-    await page.click('.grid-cell:not(:empty)'); // Click a unit
+    await page.waitForSelector('.grid-cell[data-combat]');
+    await page.click('.grid-cell[data-combat]'); // Click a unit
     await page.waitForTimeout(500);
 
     const panel = await page.locator('#info-panel-wrapper');
@@ -36,5 +37,4 @@ test('check board position on mobile', async ({ page }) => {
         console.log(`Overlap detected: ${overlap}`);
     }
 
-    await page.screenshot({ path: 'debug_mobile_pos.png' });
 });
