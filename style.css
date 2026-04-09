@@ -244,6 +244,16 @@ body {
     bottom: 0.5rem !important;
     opacity: 0.6;
 }
+
+@media (max-width: 640px) {
+    .buttons-collapsed {
+        bottom: 52vh !important;
+        right: 1rem !important;
+        opacity: 0.9;
+        transform: scale(0.8);
+    }
+}
+
 .buttons-collapsed:hover {
     opacity: 1;
     transform: scale(0.9);
@@ -265,6 +275,11 @@ body {
     }
     #info-panel-wrapper.translate-y-0 {
         transform: translateY(0);
+        z-index: 100; /* 提升层级，确保在其他面板之上 */
+    }
+
+    #side-menu {
+        z-index: 110; /* 侧边菜单层级更高 */
     }
 
     /* 移动端紧凑样式 */
