@@ -32,18 +32,18 @@
     </div>
 
     <!-- 右下角浮动按钮组 -->
-    <div class="fixed bottom-6 right-6 z-[70] flex flex-col gap-3">
-        <button onclick="endPlayerTurn()" id="end-turn-btn" class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center group active:scale-95">
-            <span class="text-2xl sm:text-3xl group-hover:translate-x-1 transition-transform">⏭️</span>
-            <span class="text-[10px] font-bold mt-1">结束回合</span>
+    <div id="floating-buttons" class="fixed bottom-6 right-6 z-[70] flex flex-col gap-3 transition-all duration-300 origin-right">
+        <button onclick="endPlayerTurn()" id="end-turn-btn" class="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-cyan-500 to-emerald-500 hover:from-cyan-600 hover:to-emerald-600 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center group active:scale-95">
+            <span class="text-xl sm:text-2xl group-hover:translate-x-1 transition-transform">⏭️</span>
+            <span class="text-[9px] font-bold mt-0.5">结束回合</span>
         </button>
-        <button onclick="resetGame()" class="w-16 h-16 sm:w-20 sm:h-20 bg-slate-800/90 hover:bg-slate-700 backdrop-blur-md border border-white/10 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center active:scale-95">
-            <span class="text-xl sm:text-2xl">🔄</span>
-            <span class="text-[10px] font-bold mt-1 text-slate-400">重开</span>
+        <button onclick="resetGame()" class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-800/90 hover:bg-slate-700 backdrop-blur-md border border-white/10 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center active:scale-95">
+            <span class="text-lg sm:text-xl">🔄</span>
+            <span class="text-[9px] font-bold mt-0.5 text-slate-400">重开</span>
         </button>
-        <button onclick="toggleMenu('side-menu')" class="w-16 h-16 sm:w-20 sm:h-20 bg-slate-800/90 hover:bg-slate-700 backdrop-blur-md border border-white/10 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center active:scale-95">
-            <span class="text-xl sm:text-2xl">⚙️</span>
-            <span class="text-[10px] font-bold mt-1 text-slate-400">功能</span>
+        <button onclick="toggleMenu('side-menu')" class="w-14 h-14 sm:w-16 sm:h-16 bg-slate-800/90 hover:bg-slate-700 backdrop-blur-md border border-white/10 text-white rounded-full shadow-2xl transition-all flex flex-col items-center justify-center active:scale-95">
+            <span class="text-lg sm:text-xl">⚙️</span>
+            <span class="text-[9px] font-bold mt-0.5 text-slate-400">功能</span>
         </button>
     </div>
 
