@@ -13,13 +13,13 @@
     <div class="fixed inset-0 bg-black/80 backdrop-blur-[3px] z-0"></div>
 
     <!-- 顶部状态浮窗 -->
-    <div id="top-status" class="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
-        <div id="turn-display" class="px-8 py-2 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-x-4 shadow-2xl pointer-events-auto transition-all">
-            <span id="turn-team" class="turn-indicator font-bold text-lg">🟦 玩家回合</span>
-            <div class="w-px h-6 bg-white/20"></div>
-            <span id="turn-number" class="font-mono text-2xl text-white">01</span>
+    <div id="top-status" class="fixed top-2 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none">
+        <div id="turn-display" class="px-4 py-1 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-x-3 shadow-2xl pointer-events-auto transition-all">
+            <span id="turn-team" class="turn-indicator font-bold text-sm">🟦 玩家回合</span>
+            <div class="w-px h-4 bg-white/20"></div>
+            <span id="turn-number" class="font-mono text-lg text-white">01</span>
         </div>
-        <div id="phase-text" class="mt-2 text-[10px] text-emerald-300 tracking-widest uppercase opacity-80 drop-shadow-md">多次移动 + 攻击/技能1次 • 平滑动画</div>
+        <div id="phase-text" class="mt-1 text-[8px] text-emerald-300 tracking-widest uppercase opacity-80 drop-shadow-md">多次移动 + 攻击/技能1次 • 平滑动画</div>
     </div>
 
     <!-- 游戏主容器（仅保留棋盘，其它全浮动） -->
@@ -109,7 +109,7 @@
             <div class="h-1.5 w-12 bg-white/20 rounded-full mx-auto mt-4 mb-2 sm:hidden"></div>
 
             <div class="flex-1 overflow-y-auto p-6 sm:p-8 custom-scroll">
-                <div id="selected-panel" class="hidden">
+                <div id="selected-panel" class="hidden flex-1 flex flex-col">
                     <div class="flex items-center justify-between mb-6">
                         <div class="flex items-center gap-4">
                             <div id="selected-emoji" class="text-6xl drop-shadow-2xl"></div>
@@ -171,6 +171,22 @@
                     <div id="terrain-desc" class="hidden bg-slate-900/60 rounded-[32px] p-6 border border-white/5">
                         <p id="terrain-desc-text" class="text-slate-300 leading-relaxed"></p>
                         <div class="text-[10px] text-slate-500 mt-4 pt-4 border-t border-white/10 uppercase tracking-widest">地形单位 • 不可攻击</div>
+                    </div>
+                </div>
+
+                <div id="overlap-selector" class="hidden flex-1 flex flex-col">
+                    <div class="flex items-center justify-between mb-8">
+                        <div class="text-indigo-400 font-black text-2xl flex items-center gap-2"><span>👥</span> 重合单位选择</div>
+                        <button onclick="deselectUnit()" class="p-2 hover:bg-white/10 rounded-full transition-colors">✕</button>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-indigo-500/30 rounded-[40px] p-8 space-y-6 shadow-2xl">
+                        <div class="text-xs font-bold text-indigo-300 uppercase tracking-widest text-center opacity-70">在此格检测到多个单位，请选择：</div>
+                        <div id="overlap-list" class="flex flex-col gap-4"></div>
+                    </div>
+
+                    <div class="mt-12 text-center text-slate-500 text-[10px] uppercase tracking-widest leading-loose">
+                        提示：战棋单位常与地形重合<br>点击上方卡片查看详细属性
                     </div>
                 </div>
 
