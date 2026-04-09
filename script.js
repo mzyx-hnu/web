@@ -2152,7 +2152,10 @@ export function showAddEffectToSkillForm(skillId, type) {
             <select id="new-skill-eff-id-${type}" class="editor-input w-full px-4 py-3 rounded-xl text-xs">
                 ${Object.keys(EFFECT_LIBRARY).map(id => `<option value="${id}">${EFFECT_LIBRARY[id].emoji} ${EFFECT_LIBRARY[id].name}</option>`).join("")}
             </select>
-            <input id="new-skill-eff-dur-${type}" type="number" value="3" class="editor-input w-full px-4 py-3 rounded-xl text-xs" placeholder="持续回合">
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 mb-1">持续回合</label>
+                <input id="new-skill-eff-dur-${type}" type="number" value="3" class="editor-input w-full px-4 py-3 rounded-xl text-xs" placeholder="持续回合">
+            </div>
             <div class="flex gap-2">
                 <button onclick="confirmBindEffectToSkill('${skillId}', '${type}')" class="flex-1 py-3 bg-amber-600 text-white text-xs font-bold rounded-xl">确定</button>
                 <button onclick="popEditorState()" class="flex-1 py-3 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl">取消</button>
@@ -2380,12 +2383,16 @@ export function addNewUnitAtSelectedCell() {
 /* UI 更新（已适配浮动面板） */
 function toggleInfoPanel(show) {
     const wrapper = document.getElementById("info-panel-wrapper");
+    const floatingBtns = document.getElementById("floating-buttons");
+
     if (show) {
         wrapper.classList.remove("translate-y-full", "sm:translate-x-full");
         wrapper.classList.add("translate-y-0", "sm:translate-x-0");
+        if (floatingBtns) floatingBtns.classList.add("buttons-collapsed");
     } else {
         wrapper.classList.add("translate-y-full", "sm:translate-x-full");
         wrapper.classList.remove("translate-y-0", "sm:translate-x-0");
+        if (floatingBtns) floatingBtns.classList.remove("buttons-collapsed");
     }
 }
 
@@ -3086,6 +3093,7 @@ if (typeof window !== 'undefined') {
         quickSetEmoji,
         previewSkillInEdit,
         deleteSkill,
+        editExistingSkill,
         confirmEditSkill,
         confirmAddSkill,
         confirmCreateEffect,

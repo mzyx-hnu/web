@@ -237,6 +237,18 @@ body {
     z-index: 30;
 }
 
+/* 浮动按钮折叠状态 */
+.buttons-collapsed {
+    transform: scale(0.8);
+    right: 0.5rem !important;
+    bottom: 0.5rem !important;
+    opacity: 0.6;
+}
+.buttons-collapsed:hover {
+    opacity: 1;
+    transform: scale(0.9);
+}
+
 /* 响应式调整 */
 @media (max-width: 640px) {
     #info-panel-wrapper.translate-y-full {
