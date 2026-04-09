@@ -109,7 +109,7 @@
             <div class="h-1.5 w-12 bg-white/20 rounded-full mx-auto mt-4 mb-2 sm:hidden"></div>
 
             <div class="flex-1 overflow-y-auto p-6 sm:p-8 custom-scroll">
-                <div id="selected-panel" class="hidden">
+                <div id="selected-panel" class="hidden flex-1 flex flex-col">
                     <div class="flex items-center justify-between mb-6">
                         <div class="flex items-center gap-4">
                             <div id="selected-emoji" class="text-6xl drop-shadow-2xl"></div>
@@ -158,11 +158,6 @@
 
                     </div>
 
-                    <div id="overlap-selector" class="hidden bg-indigo-900/40 border border-indigo-500/30 rounded-[32px] p-4 mb-6">
-                        <div class="text-[10px] font-bold text-indigo-300 uppercase tracking-widest mb-3 text-center">检测到多个单位，请选择：</div>
-                        <div id="overlap-list" class="flex flex-col gap-2"></div>
-                    </div>
-
                     <div id="active-effects-container" class="pt-6 border-t border-white/5 mt-4">
                         <div class="text-[10px] font-bold uppercase tracking-widest text-purple-300 mb-3 opacity-60">当前效果 / 属性</div>
                         <div id="active-effects-list" class="flex flex-wrap gap-2 min-h-[32px]"></div>
@@ -176,6 +171,22 @@
                     <div id="terrain-desc" class="hidden bg-slate-900/60 rounded-[32px] p-6 border border-white/5">
                         <p id="terrain-desc-text" class="text-slate-300 leading-relaxed"></p>
                         <div class="text-[10px] text-slate-500 mt-4 pt-4 border-t border-white/10 uppercase tracking-widest">地形单位 • 不可攻击</div>
+                    </div>
+                </div>
+
+                <div id="overlap-selector" class="hidden flex-1 flex flex-col">
+                    <div class="flex items-center justify-between mb-8">
+                        <div class="text-indigo-400 font-black text-2xl flex items-center gap-2"><span>👥</span> 重合单位选择</div>
+                        <button onclick="deselectUnit()" class="p-2 hover:bg-white/10 rounded-full transition-colors">✕</button>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-indigo-500/30 rounded-[40px] p-8 space-y-6 shadow-2xl">
+                        <div class="text-xs font-bold text-indigo-300 uppercase tracking-widest text-center opacity-70">在此格检测到多个单位，请选择：</div>
+                        <div id="overlap-list" class="flex flex-col gap-4"></div>
+                    </div>
+
+                    <div class="mt-12 text-center text-slate-500 text-[10px] uppercase tracking-widest leading-loose">
+                        提示：战棋单位常与地形重合<br>点击上方卡片查看详细属性
                     </div>
                 </div>
 

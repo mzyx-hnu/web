@@ -771,7 +771,6 @@ export function createCombatUnit(base) {
         skills: [...(template.skills || [])],
         remainingMove: template.moveRange,
         hasAttacked: false,
-        forestModifier: false,
         skillUsedThisTurn: false,
         activeEffects: []
     };
@@ -1025,8 +1024,7 @@ function highlightRanges() {
         return;
     }
 
-    let maxMove = (sel.team === "friendly") ? entity.remainingMove : getEffectiveMoveRange(entity);
-    if (maxMove <= 0) maxMove = 0;
+    let maxMove = getEffectiveMoveRange(entity);
     const reachable = calculateReachable(entity.row, entity.col, maxMove, entity);
 
     let effectiveAtk = getEffectiveAtkRange(entity);
@@ -1072,7 +1070,6 @@ export function calculateReachable(startRow, startCol, maxMove, unit) {
     distMap[`${startRow},${startCol}`] = 0;
 
     let effectiveMax = maxMove;
-    if (unit && unit.forestModifier) effectiveMax = Math.max(0, maxMove - 1);
 
     while (queue.length > 0) {
         const {r, c, dist} = queue.shift();
@@ -1310,7 +1307,7 @@ function handleCellClick(row, col) {
         if (sel && sel.team === "friendly" && combatTeam === "enemy") {
             const actor = getUnit("friendly", sel.id);
             if (actor && !actor.hasAttacked) {
-                const effectiveAtk = actor.forestModifier ? Math.max(1, actor.atkRange - 1) : actor.atkRange;
+                const effectiveAtk = getEffectiveAtkRange(actor);
                 if (isInRange(actor, row, col, effectiveAtk)) {
                     performAttack(actor, combatUnit);
                     actor.hasAttacked = true;
@@ -1347,17 +1344,25 @@ function handleCellClick(row, col) {
 function showOverlapSelector(combatUnit, combatTeam, terrainUnit) {
     const selector = document.getElementById("overlap-selector");
     const list = document.getElementById("overlap-list");
+    const selectedPanel = document.getElementById("selected-panel");
+    const editorPanel = document.getElementById("editor-panel");
+
+    // 隐藏其他面板
+    selectedPanel.classList.add("hidden");
+    editorPanel.classList.add("hidden");
+
     selector.classList.remove("hidden");
     list.innerHTML = "";
 
     const btnCombat = document.createElement("button");
-    btnCombat.className = "flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-white/5 transition-all text-left";
+    btnCombat.className = "flex items-center gap-6 p-6 bg-slate-800 hover:bg-slate-700 rounded-3xl border border-white/10 transition-all text-left active:scale-[0.98] shadow-lg";
     btnCombat.innerHTML = `
-        <span class="text-3xl">${combatUnit.emoji}</span>
+        <span class="text-5xl drop-shadow-lg">${combatUnit.emoji}</span>
         <div class="flex-1">
-            <div class="font-bold text-sm">${combatUnit.name}</div>
-            <div class="text-[9px] text-slate-500 uppercase">${combatTeam === "friendly" ? "友方单位" : "敌方单位"}</div>
+            <div class="font-black text-lg text-white">${combatUnit.name}</div>
+            <div class="text-[10px] text-slate-400 uppercase tracking-widest mt-1">${combatTeam === "friendly" ? "友方单位" : "敌方单位"}</div>
         </div>
+        <span class="text-slate-500">❯</span>
     `;
     btnCombat.onclick = () => {
         selector.classList.add("hidden");
@@ -1365,13 +1370,14 @@ function showOverlapSelector(combatUnit, combatTeam, terrainUnit) {
     };
 
     const btnTerrain = document.createElement("button");
-    btnTerrain.className = "flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-white/5 transition-all text-left";
+    btnTerrain.className = "flex items-center gap-6 p-6 bg-slate-800 hover:bg-slate-700 rounded-3xl border border-white/10 transition-all text-left active:scale-[0.98] shadow-lg";
     btnTerrain.innerHTML = `
-        <span class="text-3xl">${terrainUnit.emoji}</span>
+        <span class="text-5xl drop-shadow-lg">${terrainUnit.emoji}</span>
         <div class="flex-1">
-            <div class="font-bold text-sm">${terrainUnit.name}</div>
-            <div class="text-[9px] text-slate-500 uppercase">地形单位</div>
+            <div class="font-black text-lg text-white">${terrainUnit.name}</div>
+            <div class="text-[10px] text-slate-400 uppercase tracking-widest mt-1">地形单位</div>
         </div>
+        <span class="text-slate-500">❯</span>
     `;
     btnTerrain.onclick = () => {
         selector.classList.add("hidden");
@@ -1381,9 +1387,8 @@ function showOverlapSelector(combatUnit, combatTeam, terrainUnit) {
     list.appendChild(btnCombat);
     list.appendChild(btnTerrain);
 
-    // 自动打开面板
+    // 自动打开面板容器
     toggleInfoPanel(true);
-    document.getElementById("selected-panel").classList.remove("hidden");
 }
 
 /* ====================== 编辑模式核心（支持空格子新增/复制 + 位置移动） ====================== */
@@ -1579,12 +1584,6 @@ function renderEditForm(isBack = false) {
                         <button onclick="pushEditorState(showAddSkillForm)" class="text-[10px] px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg border border-purple-500/30">+ 新增技能</button>
                     </div>
                     <div id="edit-normal-skills" class="space-y-2"></div>
-                    <div class="mt-4">
-                        <label class="block text-[10px] font-bold text-slate-500 mb-1 tracking-widest uppercase">终极技能</label>
-                        <select id="edit-ult-skill" class="editor-input w-full px-4 py-3 rounded-xl">
-                            ${Object.keys(GAME_CONFIG.SKILLS).map(k => `<option value="${k}" ${unit.ultSkill === k ? 'selected' : ''}>${GAME_CONFIG.SKILLS[k].name}</option>`).join('')}
-                        </select>
-                    </div>
                 </div>`;
         } else {
             html += `
@@ -2472,9 +2471,8 @@ function updateSelectedPanel() {
     if (!STATE.editMode) {
         panel.classList.remove("hidden");
         editor.classList.add("hidden");
+        document.getElementById("overlap-selector").classList.add("hidden");
         toggleInfoPanel(true);
-        // 如果没有正在进行重叠选择，且当前选中了单位，则隐藏选择器（除非就是为了重叠选择打开的）
-        if (STATE.selected) document.getElementById("overlap-selector").classList.add("hidden");
     }
 
     const isTerrain = STATE.selected.team === "terrain";
@@ -3069,7 +3067,6 @@ function resetActionsForTeam(team) {
         if (u.hp > 0) {
             u.remainingMove = u.moveRange;
             u.hasAttacked = false;
-            u.forestModifier = false;
             u.skillUsedThisTurn = false;
         }
     });
